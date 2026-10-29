@@ -1,4 +1,4 @@
-# Changelog
+﻿# Changelog
 
 This project's version narrative puts **why** before **what**. Every entry starts with the motivation.
 
@@ -20,6 +20,10 @@ And the plugin talked to its user in Chinese: the badge, the popover, the toasts
 - Host: 5 new tools — `outlook_list_folders`, `outlook_list_mail`, `outlook_move_mail`, `outlook_delete_mail`, `outlook_mark_read` (23 in total).
 - **No new confirmation gate, on purpose.** The two-call confirmation, the content hash and the `OLK_CONFIRM` token exist for actions whose output *leaves the machine* (`send_draft`/`reply_mail`/`calendar_create` with attendees/`respond_meeting`/`meeting_update`/`meeting_cancel`). Deleting to Deleted Items and moving between folders do not leave it, and a gate there would only teach the user to approve without reading. The real hazard is covered by the count gate instead.
 - Full English sweep: every user-facing string in `index.js` (confirmation previews, tool descriptions, the chat link labels) and every string in `client.js` (badge, aria labels, popover, toasts) is now English; the CJK folder/GAL/room aliases are gone from `lib/olk.ps1`; `README.md`, `TESTCASES.md` and this file are rewritten in English. The two `assets/*.png` badge screenshots still show the old Chinese tooltip and need a re-shoot.
+
+- Bridge bugs the offline harness caught, both of which would have failed on the first real mailbox. `Resolve-Folder` had been written **inside** `Out-Json`, so it existed only while that function ran: `list_mail` and `move_mail` with a `destFolder` would have died with "term not recognized", and no parse check can see this — only an extent check can. And any folder path of 60 characters or more was assumed to be an entryId and rejected, so `Inbox/Projects/2026/Q4/...` could never resolve; the id attempt now falls through to the path walk, and the error names the segment that is missing.
+- `list_mail` no longer fails when a store does not expose `UnReadItemCount` (public folders, some archive add-ins): the field reports `-1`, meaning the store did not tell us, instead of aborting the whole listing.
+- `test/` — an offline harness that needs no Outlook at all: `folder-resolution.test.ps1` (extent/nesting checks plus 8 resolution cases, including a 78-character path and a 71-character entryId containing `/`) and `mail-actions.test.ps1`, which runs the **real** case bodies out of `lib/olk.ps1` against a fake COM model (59 assertions: paging, sort, unread-only, previews, move returning the new ids, the delete count gate refusing, both directions of read state, the folder walk). `npm test` runs both in child processes. This is what makes the COM layer provable on a machine with no Outlook installed.
 
 ## 2.11.0 — Chat "open" links no longer leave dead tabs
 

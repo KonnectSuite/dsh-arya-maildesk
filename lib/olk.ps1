@@ -18,6 +18,7 @@ $out = [ordered]@{}
 function Out-Json($obj) {
   [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
   $obj | ConvertTo-Json -Depth 6
+}
 
 function Resolve-Folder($ns, $spec) {
   # Resolve a folder to a Folder object. Accepted forms, in order:
@@ -33,9 +34,14 @@ function Resolve-Folder($ns, $spec) {
   # pass a path or a folder entryId from list_folders instead.
   $s = [string]$spec
   if ($s -eq '') { return $ns.GetDefaultFolder(6) }
+  # Neither length nor separators can decide id-vs-path on their own: a deep
+  # folder path easily exceeds 60 chars, and a real entryId may contain '/'
+  # (base64). Try the id first and fall through to the path walk instead of
+  # giving up, so a long path resolves and a stale id still reports clearly.
+  $idTried = $false
   if ($s.Length -ge 60) {
-    try { return $ns.GetFolderFromID($s) }
-    catch { throw "folder entryId not found: a stored id goes stale when the folder moves. Re-run list_folders." }
+    $idTried = $true
+    try { return $ns.GetFolderFromID($s) } catch { }
   }
   $s = $s -replace '/', '\'
   $segs = @($s -split '\\' | Where-Object { $_ -ne '' })
@@ -48,10 +54,12 @@ function Resolve-Folder($ns, $spec) {
     elseif ($first -ieq 'Deleted Items' -or $first -ieq 'Deleted') { $f = $ns.GetDefaultFolder(3); $segs = @($segs | Select-Object -Skip 1) }
   }
   foreach ($seg in $segs) {
-    try { $f = $f.Folders.Item($seg) } catch { throw "folder not found: '$seg' (in path '$s')" }
+    try { $f = $f.Folders.Item($seg) } catch {
+      if ($idTried) { throw "no folder matches '${spec}': it is not a live folder entryId, and '${seg}' is missing from path '${s}'. Re-run list_folders." }
+      throw "folder not found: '${seg}' (in path '${s}')"
+    }
   }
   return $f
-}
 }
 
 try {
@@ -858,7 +866,11 @@ try {
       $out.offset = $offset
       $out.returned = $mails.Count
       $out.folderPath = [string]$folder.FolderPath
-      $out.unreadInFolder = [int]$folder.UnReadItemCount
+      # Some stores (public folders, some archive add-ins) do not expose
+      # UnReadItemCount; -1 means "the store did not tell us".
+      $unc = -1
+      try { $unc = [int]$folder.UnReadItemCount } catch { }
+      $out.unreadInFolder = $unc
       $out.mails = $mails
     }
 

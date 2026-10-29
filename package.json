@@ -41,8 +41,13 @@
     "README.md",
     "CHANGELOG.md",
     "TESTCASES.md",
+    "NOTICE",
+    "UPSTREAM.md",
     "LICENSE"
   ],
+  "scripts": {
+    "test": "powershell -NoProfile -ExecutionPolicy Bypass -File test/run-all.ps1"
+  },
   "dsh": {
     "bundle": {
       "patch": "./cordis.patch.yml"

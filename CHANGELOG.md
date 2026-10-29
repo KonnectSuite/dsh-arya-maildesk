@@ -1,6 +1,17 @@
-﻿# Changelog
+# Changelog
 
 This project's version narrative puts **why** before **what**. Every entry starts with the motivation.
+
+## 2.14.0 — Mail you can read, not just list
+
+**Why**: the panel listed mail and rendered the body as one flat paragraph, so an invoice, a trip sheet and a vendor notice all looked alike, and the quote you were about to answer lost its shape before you saw it. The plain-text path also erased a distinction that matters: *this mail has no HTML* and *this mail has HTML we refuse to render* both came out as text. A Proofpoint-rewritten link could not be checked before clicking it, and a tracking pixel was never a decision the reader got to make.
+
+**What changed**:
+- `read_mail` accepts `format: 'html'` and returns `htmlBody` with `htmlTruncated` (cap 200,000 chars by default, `maxHtmlChars` to raise it). The bridge returns the HTML raw, and the comment in `lib/olk.ps1` says why: the renderer owns the document parser, so that is where the decision belongs.
+- The reading pane sanitizes before rendering: allowlisted tags, attributes and style properties; `<script>`, `<style>`, frames, forms, objects and SVG dropped **with their contents**; every `<img>` replaced by a *remote image blocked* chip so no pixel is fetched; links limited to `http:`, `https:`, `mailto:` and `tel:` and stamped `rel="noopener noreferrer" target="_blank"`.
+- Proofpoint unwrapping: both the `urldefense.proofpoint.com/v2/url?u=…` parameter and the `/v3/__…__;` segment form resolve to the real target before the allowlist test, so the link you inspect is the link you visit.
+- The fixture's `read_mail` now serves deliberately hostile HTML — a table, a wrapped vendor link, a `javascript:` link, a tracking pixel, an inline `<script>` and an `onclick` — so the sanitizer is exercised through the same route the panel uses, not only in a unit test.
+- `test/panel-api.test.mjs` gained the assertion that `htmlBody` is absent unless html is asked for, that it contains `<table>` when it is, and that the raw bridge body still contains `<script` — the bridge must not quietly rewrite someone's mail.
 
 ## 2.13.0 — Named dsh-arya-maildesk, and the plugin gets a face
 

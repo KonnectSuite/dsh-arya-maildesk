@@ -1,4 +1,4 @@
-﻿﻿# dsh-arya-maildesk Outlook COM bridge dispatcher.
+﻿# dsh-arya-maildesk Outlook COM bridge dispatcher.
 # Invoked as: powershell -NoProfile -Command "Invoke-Expression (Get-Content -Raw <this file>)"
 # Input:  $env:OLK_ACTION = action name; arguments as ONE JSON OBJECT on STDIN
 #         (stdin transport — Windows env vars cap near 32 KB and a large mail
@@ -217,6 +217,21 @@ try {
         $out.truncated = $true
       } else {
         $out.body = $body
+      }
+      # HTMLBody is opt-in: it is much larger than Body and most callers only
+      # want the text. The panel asks for it so it can render the formatting.
+      # It is returned raw - sanitizing belongs in the renderer, which has the
+      # document parser, not here.
+      if ([string]$args_.format -eq 'html') {
+        $html = [string]$it.HTMLBody
+        $htmlMax = if ($args_.maxHtmlChars) { [int]$args_.maxHtmlChars } else { 200000 }
+        if ($html.Length -gt $htmlMax) {
+          $out.htmlBody = $html.Substring(0, $htmlMax)
+          $out.htmlTruncated = $true
+        } else {
+          $out.htmlBody = $html
+          $out.htmlTruncated = $false
+        }
       }
       $out.attachments = @($it.Attachments | ForEach-Object { $_.DisplayName })
     }

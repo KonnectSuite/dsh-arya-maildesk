@@ -237,6 +237,10 @@ const PANEL_ACTIONS = new Set([
  */
 const FIXTURE_ON = process.env.MAILDESK_FIXTURE === '1'
 
+function escapeHtml(value) {
+  return String(value).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c])
+}
+
 function makeFixture() {
   let seed = 0x9e3779b9
   const rnd = () => {
@@ -370,7 +374,26 @@ function fixtureCall(action, args = {}) {
     case 'read_mail': {
       for (const f of fixture.folders) {
         const m = f.items.find((x) => x.entryId === args.entryId)
-        if (m) return ok({ subject: m.subject, sender: m.sender, received: m.received, to: m.to, cc: m.cc, bcc: m.bcc, body: m.body, attachments: m.attachments, unread: m.unread })
+        if (m) {
+          const out = { subject: m.subject, sender: m.sender, received: m.received, to: m.to, cc: m.cc, bcc: m.bcc, body: m.body, attachments: m.attachments, unread: m.unread }
+          if (args.format === 'html') {
+            // Deliberately hostile fixture HTML: a tracking pixel, a script, an
+            // onclick, a javascript: link and a Proofpoint-wrapped link. The
+            // renderer must drop or rewrite every one of them.
+            const paras = String(m.body).split('\n').filter(Boolean).map((line) => '<p>' + escapeHtml(line) + '</p>').join('')
+            out.htmlBody = '<html><body><div style="font-family: Calibri">' + paras
+              + '<p style="color:#666">-- <br>' + escapeHtml(m.sender) + ' | Fromm Connect</p>'
+              + '<table border="1" cellpadding="4"><tr><th>PO</th><th>Qty</th></tr><tr><td>45-88213</td><td>12</td></tr></table>'
+              + '<p><a href="https://urldefense.proofpoint.com/v2/url?u=https%3A%2F%2Frockwellautomation%2Ecom%2Fsupport&d=DwMF&c=abc&r=def&m=ghi&s=jkl&e=">Track this order</a></p>'
+              + '<p><a href="javascript:alert(1)">unsubscribe</a></p>'
+              + '<img src="https://tracker.example/pixel.gif?id=1" width="1" height="1">'
+              + '<script>window.__pwned = true</script>'
+              + '<div onclick="window.__clicked = true">click me</div>'
+              + '</div></body></html>'
+            out.htmlTruncated = false
+          }
+          return ok(out)
+        }
       }
       return { status: 'error', error: 'item not found: ' + args.entryId }
     }
@@ -754,6 +777,8 @@ export function apply(ctx) {
       properties: {
         entryId: { type: 'string', description: 'entryId from maildesk_search_mail.' },
         maxChars: { type: 'number', description: 'Max body characters. Default 8000.' },
+        format: { type: 'string', description: "Pass 'html' to also return htmlBody (raw, unsanitized: a renderer must sanitize it). Default text only." },
+        maxHtmlChars: { type: 'number', description: 'Max htmlBody characters when format is html. Default 200000.' },
       },
       required: ['entryId'],
     },

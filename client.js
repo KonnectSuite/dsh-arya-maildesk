@@ -125,6 +125,14 @@ window.__ModuleLoader__.load({
         '.md-meta b{font-weight:600;opacity:.9}',
         '.md-att{display:inline-flex;align-items:center;gap:4px;font-size:11px;padding:2px 7px;border-radius:6px;background:#8898ac18;margin:4px 4px 0 0}',
         '.md-read-body{flex:1 1 auto;overflow:auto;padding:14px 16px 24px;white-space:pre-wrap;word-break:break-word;font-size:13px;line-height:1.6}',
+        '.md-html{white-space:normal}',
+        '.md-html p{margin:0 0 10px}',
+        '.md-html table{border-collapse:collapse;margin:8px 0;font-size:12px}',
+        '.md-html th,.md-html td{border:1px solid var(--dsw-alias-border-subtle,#dcdcdc);padding:4px 8px;text-align:left}',
+        '.md-html blockquote{margin:8px 0;padding:2px 0 2px 10px;border-left:3px solid #8898ac55;opacity:.85}',
+        '.md-html a{color:#3b6ef5;text-decoration:underline}',
+        '.md-img-blocked{display:inline-block;font-size:11px;padding:2px 8px;border-radius:6px;background:#8898ac18;opacity:.8;border:1px dashed #8898ac55}',
+        '.md-html-note{font-size:11px;opacity:.65;margin:0 0 8px}',
         '.md-empty{flex:1 1 auto;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;padding:28px;text-align:center;font-size:12.5px;opacity:.8}',
         '.md-empty-h{font-size:13.5px;font-weight:600;opacity:1}',
         '.md-err{margin:10px 14px;padding:10px 12px;border-radius:10px;background:#e5484d12;color:#a3262b;font-size:12px;line-height:1.55;white-space:pre-wrap;word-break:break-word}',
@@ -182,6 +190,145 @@ window.__ModuleLoader__.load({
       div.textContent = text
       document.body.appendChild(div)
       setTimeout(() => { if (div.parentNode !== null) div.parentNode.removeChild(div) }, 2800)
+    }
+
+    /* ------------------------------------------------- reading pane sanitizer */
+
+    // Mail HTML is hostile input: it comes from whoever wrote the message, and
+    // it is rendered inside the harness frame. Everything below is an allowlist:
+    // an element or attribute not named here does not survive.
+    const DROP_WITH_CONTENT = new Set([
+      'script', 'style', 'iframe', 'frame', 'frameset', 'object', 'embed', 'applet',
+      'link', 'meta', 'base', 'title', 'head', 'form', 'input', 'button', 'select',
+      'textarea', 'option', 'optgroup', 'label', 'fieldset', 'legend', 'svg', 'math',
+      'video', 'audio', 'source', 'track', 'canvas', 'template', 'noscript', 'marquee',
+    ])
+
+    // Unknown tags are unwrapped (their text survives); these are kept.
+    const KEEP_TAGS = new Set([
+      'a', 'b', 'strong', 'i', 'em', 'u', 's', 'strike', 'sub', 'sup', 'small', 'big',
+      'p', 'div', 'span', 'br', 'hr', 'blockquote', 'pre', 'code', 'font', 'center',
+      'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'ul', 'ol', 'li', 'dl', 'dt', 'dd',
+      'table', 'thead', 'tbody', 'tfoot', 'tr', 'td', 'th', 'caption', 'colgroup', 'col',
+      'img', 'address', 'cite', 'q',
+    ])
+
+    const ATTRS_BY_TAG = {
+      a: ['href', 'title'],
+      img: ['alt', 'width', 'height'],
+      td: ['colspan', 'rowspan', 'align', 'valign', 'width'],
+      th: ['colspan', 'rowspan', 'align', 'valign', 'width'],
+      table: ['border', 'cellpadding', 'cellspacing', 'width', 'align'],
+      col: ['span', 'width'],
+      colgroup: ['span', 'width'],
+      font: ['color', 'face', 'size'],
+      p: ['align'], div: ['align'], h1: ['align'], h2: ['align'], h3: ['align'],
+    }
+
+    // A style attribute is allowed, but only these declarations survive.
+    const STYLE_PROPS = new Set([
+      'color', 'background-color', 'font-weight', 'font-style', 'font-size', 'font-family',
+      'text-decoration', 'text-align', 'text-transform', 'line-height', 'letter-spacing',
+      'padding', 'padding-top', 'padding-right', 'padding-bottom', 'padding-left',
+      'margin', 'margin-top', 'margin-right', 'margin-bottom', 'margin-left',
+      'border', 'border-top', 'border-right', 'border-bottom', 'border-left',
+      'border-color', 'border-style', 'border-width', 'border-collapse', 'border-radius',
+      'width', 'max-width', 'height', 'vertical-align', 'white-space', 'display', 'float',
+    ])
+
+    const SAFE_URL = /^(?:https?:|mailto:|tel:)/i
+
+    // Proofpoint rewrites every inbound link and wraps it in an urldefense hop.
+    // Unwrap it so the reader sees and copies the address the sender wrote.
+    function unwrapProofpoint(href) {
+      let url = String(href || '')
+      try {
+        if (/urldefense\.proofpoint\.com\/v2\/url/i.test(url)) {
+          const u = new URL(url).searchParams.get('u')
+          if (u !== null && u !== '') url = decodeURIComponent(u)
+        } else if (/urldefense\.(?:com|proofpoint\.com)\/v3\//i.test(url)) {
+          const m = /\/v3\/__(.+?)__(?:;|$)/i.exec(url)
+          if (m !== null) url = decodeURIComponent(m[1].replace(/_/g, '%5F'))
+        }
+      } catch { /* a malformed link is left exactly as it came */ }
+      return url
+    }
+
+    function sanitizeStyle(value) {
+      const kept = []
+      for (const part of String(value).split(';')) {
+        const i = part.indexOf(':')
+        if (i < 0) continue
+        const name = part.slice(0, i).trim().toLowerCase()
+        const val = part.slice(i + 1).trim()
+        if (!STYLE_PROPS.has(name)) continue
+        if (val === '' || /url\s*\(|expression\s*\(|javascript:|\bimport\b|behavior\s*:/i.test(val)) continue
+        kept.push(name + ': ' + val)
+      }
+      return kept.join('; ')
+    }
+
+    /**
+     * Returns an HTML string that is safe to hand to the DOM: unknown elements
+     * unwrapped, script-bearing elements dropped with their contents, every
+     * attribute re-checked, remote images replaced by a placeholder so no
+     * tracker is fetched, and Proofpoint hops unwrapped.
+     */
+    function sanitizeEmailHtml(html) {
+      const doc = new DOMParser().parseFromString(String(html), 'text/html')
+      const body = doc.body
+      if (body === null) return ''
+
+      const walk = (node) => {
+        for (const child of Array.from(node.childNodes)) {
+          if (child.nodeType === 3) continue
+          if (child.nodeType !== 1) { child.remove(); continue }
+          const tag = child.tagName.toLowerCase()
+          if (DROP_WITH_CONTENT.has(tag)) { child.remove(); continue }
+
+          if (!KEEP_TAGS.has(tag)) {
+            // Unknown wrapper: keep the text, lose the element.
+            walk(child)
+            while (child.firstChild !== null) node.insertBefore(child.firstChild, child)
+            child.remove()
+            continue
+          }
+
+          walk(child)
+
+          if (tag === 'img') {
+            const alt = child.getAttribute('alt') || 'image'
+            const chip = doc.createElement('span')
+            chip.className = 'md-img-blocked'
+            chip.textContent = '🖼 ' + alt + ' (remote image blocked)'
+            child.replaceWith(chip)
+            continue
+          }
+
+          const allowed = new Set(ATTRS_BY_TAG[tag] || [])
+          for (const attr of Array.from(child.attributes)) {
+            const name = attr.name.toLowerCase()
+            if (name === 'style') {
+              const safe = sanitizeStyle(attr.value)
+              if (safe === '') child.removeAttribute(attr.name)
+              else child.setAttribute('style', safe)
+              continue
+            }
+            if (!allowed.has(name)) { child.removeAttribute(attr.name); continue }
+            if (name === 'href') {
+              const url = unwrapProofpoint(attr.value)
+              if (!SAFE_URL.test(url)) { child.removeAttribute(attr.name); continue }
+              child.setAttribute('href', url)
+              child.setAttribute('rel', 'noopener noreferrer')
+              child.setAttribute('target', '_blank')
+              child.setAttribute('title', url)
+            }
+          }
+        }
+      }
+
+      walk(body)
+      return body.innerHTML
     }
 
     /* ---------------------------------------------------------- badge surface */
@@ -429,7 +576,7 @@ window.__ModuleLoader__.load({
         setOpenMail(null)
         setReadState('loading')
         try {
-          const result = await call('read_mail', { entryId, maxChars: 20000 })
+          const result = await call('read_mail', { entryId, maxChars: 20000, format: 'html' })
           setOpenMail({ entryId, ...result })
           setReadState('ready')
           // Opening a mail reads it, the way the desktop client does. The
@@ -663,6 +810,7 @@ window.__ModuleLoader__.load({
         }
         if (openMail === null) return null
         const attachments = Array.isArray(openMail.attachments) ? openMail.attachments.filter(Boolean) : []
+        const safeHtml = typeof openMail.htmlBody === 'string' && openMail.htmlBody !== '' ? sanitizeEmailHtml(openMail.htmlBody) : null
         return h(React.Fragment, null,
           h('div', { className: 'md-read-head' },
             h('div', { className: 'md-read-subj' }, openMail.subject || '(no subject)'),
@@ -672,7 +820,13 @@ window.__ModuleLoader__.load({
               openMail.cc ? h('div', null, h('b', null, 'Cc: '), openMail.cc) : null,
               h('div', null, h('b', null, 'Received: '), openMail.received || '')),
             attachments.length > 0 ? h('div', null, attachments.map((a, i) => h('span', { key: i, className: 'md-att' }, '📎 ' + a))) : null),
-          h('div', { className: 'md-read-body' }, openMail.body || '(no text body)'))
+          h('div', { className: 'md-read-body' },
+            openMail.htmlTruncated === true
+              ? h('div', { className: 'md-html-note' }, 'The formatted body was truncated; text past the cut is missing.')
+              : null,
+            safeHtml !== null
+              ? h('div', { className: 'md-html', dangerouslySetInnerHTML: { __html: safeHtml } })
+              : h('div', { className: 'md-text' }, openMail.body || '(no text body)')))
       })()
 
       return h('div', { className: 'md', onKeyDown, tabIndex: -1 },

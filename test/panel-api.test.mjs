@@ -150,6 +150,22 @@ await check('read_mail returns a body and attachments array', async () => {
   assert.ok(r.result.to.includes('kphung@frommconnect.com'))
 })
 
+await check('read_mail returns htmlBody only when html is asked for', async () => {
+  const list = await post('list_mail', { folder: inboxId, limit: 1 })
+  const id = list.result.mails[0].entryId
+  const plain = await post('read_mail', { entryId: id })
+  assert.equal(plain.result.htmlBody, undefined, 'htmlBody must stay out of the default payload')
+  const rich = await post('read_mail', { entryId: id, format: 'html' })
+  assert.equal(rich.ok, true)
+  assert.equal(typeof rich.result.htmlBody, 'string')
+  assert.ok(rich.result.htmlBody.includes('<table'), 'the fixture body carries a table')
+  // The fixture body is deliberately hostile; the renderer, not the bridge,
+  // is responsible for removing these - the bridge must not silently rewrite
+  // the mail it reports.
+  assert.ok(rich.result.htmlBody.includes('<script'), 'raw body is untrusted input')
+  assert.equal(rich.result.htmlTruncated, false)
+})
+
 await check('mark_read flips only the given mail', async () => {
   const list = await post('list_mail', { folder: inboxId, limit: 2 })
   const [a, b] = list.result.mails

@@ -62,6 +62,14 @@ The data path is one allowlisted host route, `POST /maildesk/api/call`, guarded 
 
 No Outlook on this machine? `MAILDESK_FIXTURE=1` serves a synthetic mailbox and the header says `FIXTURE DATA`, so the interface can be developed and reviewed without COM. It is opt-in on purpose: a COM failure is reported as an error, never answered with invented mail.
 
+### Reading mail safely
+
+![HTML mail in the reading pane: the table renders, the remote image is a chip, the Proofpoint link points at the vendor](docs/panel-html.png)
+
+HTML bodies are parsed and rebuilt against an allowlist rather than injected: known tags and attributes survive, `<script>`, `<style>` and the embedding family are dropped with their contents, every `<img>` becomes a *remote image blocked* chip so a tracking pixel never sends a read receipt, and only `http:`, `https:`, `mailto:` and `tel:` links survive with `rel="noopener noreferrer"`. Style properties are allowlisted too, so `url()`, `expression()` and `behavior` cannot come back in through CSS.
+
+Proofpoint rewrites inbound URLs. The reader unwraps both the `urldefense.proofpoint.com/v2/url?u=…` and the `…/v3/__…__;…` forms, so a vendor link opens the vendor and the target you inspect is the one you will actually visit. The bridge returns `HTMLBody` raw — it is the renderer, which owns a document parser, that decides what survives.
+
 ## Quick start
 
 ```sh

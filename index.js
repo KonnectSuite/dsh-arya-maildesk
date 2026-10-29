@@ -205,6 +205,230 @@ function needsConfirmation(kind, detail, editable = null) {
   }
 }
 
+/* ---------------------------------------------------------------------------
+ * PANEL DATA PATH (the GUI's half of the bridge)
+ *
+ * The panel lives in the client bundle, and a bundle's only outlet is HTTP:
+ * the module loader hands `factory(require)` the kernel modules (react,
+ * react-dom) and nothing that reaches this half, so `host.call` — a provider
+ * for model-authored dynamic plugins — is not available there. A same-origin
+ * POST route is the path the shipped client faces take, dsh-llamacpp's
+ * control center included, and it is the one proven on this host.
+ *
+ * One route, an allowlist, and the same origin guard as the badge routes.
+ * The panel may read and organize mail. It may NEVER send: send_draft,
+ * reply_mail and every calendar write are absent from the allowlist, so the
+ * only way mail leaves this machine is still the agent-side two-call
+ * confirmation that mints OLK_CONFIRM.
+ * ------------------------------------------------------------------------- */
+const PANEL_ACTIONS = new Set([
+  'account', 'list_folders', 'list_mail', 'read_mail',
+  'mark_read', 'move_mail', 'delete_mail', 'open_mail',
+])
+
+/**
+ * MAILDESK_FIXTURE=1 serves a synthetic mailbox instead of COM.
+ *
+ * It exists so the panel can be built and reviewed on a machine with no
+ * Outlook, and so UI work never depends on a live mailbox. It is strictly
+ * opt-in: a COM failure is surfaced as an error, never silently answered
+ * with fake mail, because a panel showing invented messages would be worse
+ * than a panel showing none.
+ */
+const FIXTURE_ON = process.env.MAILDESK_FIXTURE === '1'
+
+function makeFixture() {
+  let seed = 0x9e3779b9
+  const rnd = () => {
+    seed = (seed + 0x6d2b79f5) >>> 0
+    let t = seed
+    t = Math.imul(t ^ (t >>> 15), t | 1)
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61)
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296
+  }
+  const pick = (list) => list[Math.floor(rnd() * list.length)]
+  const makeId = (kind, n) => (kind + '-' + n + '-' + Math.floor(rnd() * 1e9).toString(36) + '-fixture').padEnd(90, 'Q')
+
+  const folders = []
+  const folder = (name, parent) => {
+    const path = parent === null ? name : parent.path + '/' + name
+    const f = { entryId: makeId('folder', folders.length), name, path, store: 'Fromm Connect', depth: parent === null ? 0 : parent.depth + 1, childCount: 0, items: [] }
+    if (parent !== null) parent.childCount++
+    folders.push(f)
+    return f
+  }
+  const inbox = folder('Inbox', null)
+  const projects = folder('Projects', inbox)
+  const vendors = folder('Vendors', inbox)
+  const sent = folder('Sent Items', null)
+  const drafts = folder('Drafts', null)
+  const archive = folder('Archive', null)
+  const a2026 = folder('2026', archive)
+  const deleted = folder('Deleted Items', null)
+
+  const people = [
+    ['Dana Whitfield', 'dwhitfield@frommconnect.com'],
+    ['Marcus Lee', 'mlee@frommconnect.com'],
+    ['Sofia Alvarez', 'salvarez@frommconnect.com'],
+    ['Nathan Brooks', 'nbrooks@frommconnect.com'],
+    ['Melissa Chen', 'mchen@frommconnect.com'],
+    ['Rockwell Automation Support', 'support@rockwellautomation.com'],
+    ['APEX Industrial Supply', 'orders@apexindustrial.example'],
+    ['Digi-Key Order Status', 'noreply@digikey.example'],
+    ['UPS Freight', 'billing@ups.example'],
+    ['Proofpoint Quarantine', 'quarantine@ppe-hosted.example'],
+  ]
+  const subjects = [
+    'RE: PO 45-88213 - PanelView Plus 7 lead time',
+    'Weekly service dispatch - 3 tickets closed',
+    'RFQ: 1734-IB8S point I/O modules',
+    'Invoice 77821 from APEX Industrial Supply',
+    'Tracking update: shipment 1Z999AA10123456784',
+    'Quarantine digest for frommconnect.com',
+    'Line 4 retrofit - PLC schedule and cutoff',
+    'Firmware 35.011 available for CompactLogix 5380',
+    'Vendor onboarding: W-9 and insurance certificate',
+    'RE: Overtime approval for week of the 26th',
+    'Safety audit findings - action items due Friday',
+    'Contractor badge paperwork - need a start date',
+  ]
+  const bodies = [
+    'Morning,\n\nLead time on the PanelView Plus 7 replacement came back at 14 weeks from the distributor, so we need a decision this week if we want to hold the March window.\n\nThe alternate 2711P-T10C22D9P is in stock but it is a 10 inch unit and the cutout changes. I can put together a comparison this afternoon.\n\nDana',
+    'The attached quote covers the 1734-IB8S modules plus the adapter. Pricing holds for 30 days.\n\nLet me know if you want me to split the shipment so the first two points can go out next week.\n\nMarcus',
+    'Your invoice is attached. Payment terms are net 30 from the invoice date.',
+    'Schedule for the retrofit:\n\n- Thursday: electrical walkdown, lockout tags\n- Friday: panel swap, 6 hour window\n- Monday: I/O checkout and point-to-point\n\nI need the line down by 5am Friday to make this work.',
+    'This message was held for review. Release it from the quarantine digest if you recognize the sender.',
+  ]
+  const makeMail = (n, f) => {
+    const [sender, smtp] = pick(people)
+    const subject = pick(subjects)
+    const body = pick(bodies)
+    const unread = f.name === 'Inbox' || f.name === 'Projects' ? rnd() < 0.45 : rnd() < 0.15
+    const m = {
+      entryId: makeId('mail', n),
+      subject,
+      sender,
+      senderSmtp: smtp,
+      received: new Date(Date.now() - Math.round(n * 47 + rnd() * 30) * 60000).toISOString().slice(0, 16).replace('T', ' '),
+      unread,
+      hasAttach: rnd() < 0.3,
+      body: body + '\n\n--\n' + sender + '\nFromm Electric | Fromm Connect',
+      to: 'K Phung <kphung@frommconnect.com>',
+      cc: rnd() < 0.25 ? 'Dana Whitfield <dwhitfield@frommconnect.com>' : '',
+      bcc: '',
+      folder: f.entryId,
+      preview: body.replace(/\s+/g, ' ').slice(0, 160),
+      attachments: rnd() < 0.3 ? ['quote-45-88213.pdf'] : [],
+    }
+    f.items.push(m)
+    return m
+  }
+  let n = 0
+  for (const f of [inbox, projects, vendors, sent, drafts, a2026, deleted]) {
+    const count = f === inbox ? 48 : f === sent ? 12 : f === a2026 ? 22 : f === drafts ? 4 : f === deleted ? 8 : 9
+    for (let k = 0; k < count; k++) makeMail(n++, f)
+  }
+  return { folders, folderById: new Map(folders.map((f) => [f.entryId, f])) }
+}
+
+const fixture = FIXTURE_ON ? makeFixture() : null
+
+function fixtureCall(action, args = {}) {
+  const ok = (extra) => ({ status: 'ok', ...extra })
+  const resolve = (spec) => {
+    if (!spec) return fixture.folders[0]
+    return fixture.folderById.get(spec) || fixture.folders.find((f) => f.path === spec) || fixture.folders.find((f) => f.name.toLowerCase() === String(spec).toLowerCase()) || null
+  }
+  switch (action) {
+    case 'account':
+      return ok({ name: 'K Phung', smtp: 'kphung@frommconnect.com', fixture: true })
+    case 'list_folders':
+      return ok({
+        folders: fixture.folders.map((f) => ({
+          entryId: f.entryId, name: f.name, path: f.path, store: f.store, depth: f.depth,
+          childCount: f.childCount, itemCount: f.items.length, unread: f.items.filter((m) => m.unread).length,
+        })),
+      })
+    case 'list_mail': {
+      const f = resolve(args.folder)
+      if (f === null) return { status: 'error', error: "no folder matches '" + args.folder + "'" }
+      let items = f.items.filter(() => true)
+      if (args.unreadOnly === true) items = items.filter((m) => m.unread)
+      const sort = String(args.sort || 'received').toLowerCase()
+      const key = sort === 'subject' ? 'subject' : sort === 'sender' ? 'sender' : 'received'
+      const desc = args.descending !== false
+      items = items.slice().sort((a, b) => (a[key] < b[key] ? -1 : a[key] > b[key] ? 1 : 0) * (desc ? -1 : 1))
+      const offset = Math.max(0, Number(args.offset) || 0)
+      const limit = Math.min(200, Math.max(1, Number(args.limit) || 50))
+      const page = items.slice(offset, offset + limit)
+      return ok({
+        total: items.length, offset, returned: page.length, folderPath: f.path,
+        unreadInFolder: f.items.filter((m) => m.unread).length,
+        mails: page.map((m) => ({ entryId: m.entryId, subject: m.subject, sender: m.sender, senderSmtp: m.senderSmtp, received: m.received, unread: m.unread, hasAttach: m.hasAttach, preview: args.preview ? m.preview : '' })),
+      })
+    }
+    case 'read_mail': {
+      for (const f of fixture.folders) {
+        const m = f.items.find((x) => x.entryId === args.entryId)
+        if (m) return ok({ subject: m.subject, sender: m.sender, received: m.received, to: m.to, cc: m.cc, bcc: m.bcc, body: m.body, attachments: m.attachments, unread: m.unread })
+      }
+      return { status: 'error', error: 'item not found: ' + args.entryId }
+    }
+    case 'mark_read': {
+      const ids = new Set(args.entryIds || (args.entryId ? [args.entryId] : []))
+      const read = args.read !== false
+      let updated = 0
+      for (const f of fixture.folders) for (const m of f.items) if (ids.has(m.entryId)) { m.unread = !read; updated++ }
+      return ok({ updated, read, failed: [] })
+    }
+    case 'move_mail': {
+      const dest = resolve(args.destFolder)
+      if (dest === null) return { status: 'error', error: "no folder matches '" + args.destFolder + "'" }
+      const ids = new Set(args.entryIds || (args.entryId ? [args.entryId] : []))
+      const newEntryIds = []
+      const failed = []
+      for (const f of fixture.folders) {
+        for (let i = f.items.length - 1; i >= 0; i--) {
+          const m = f.items[i]
+          if (!ids.has(m.entryId)) continue
+          f.items.splice(i, 1)
+          m.folder = dest.entryId
+          // An EntryID does not survive Move(): the new item gets a new id,
+          // so the caller's selection goes stale and it must re-read.
+          m.entryId = ('mail-moved-' + newEntryIds.length + '-' + Math.random().toString(36).slice(2)).padEnd(90, 'Q')
+          dest.items.push(m)
+          newEntryIds.push(m.entryId)
+        }
+      }
+      return ok({ moved: newEntryIds.length, destPath: dest.path, newEntryIds, failed })
+    }
+    case 'delete_mail': {
+      const ids = new Set(args.entryIds || (args.entryId ? [args.entryId] : []))
+      if (args.expected !== undefined && Number(args.expected) !== ids.size) {
+        return { status: 'error', error: 'refusing to delete: caller expected ' + args.expected + ' items but supplied ' + ids.size + '. Re-read the folder and retry.' }
+      }
+      const deletedIds = []
+      for (const f of fixture.folders) {
+        for (let i = f.items.length - 1; i >= 0; i--) {
+          if (ids.has(f.items[i].entryId)) { deletedIds.push(f.items[i].entryId); f.items.splice(i, 1) }
+        }
+      }
+      return ok({ deleted: deletedIds.length, recoverable: true, deletedEntryIds: deletedIds, failed: [] })
+    }
+    case 'open_mail':
+      return ok({ opened: true, subject: '(fixture)' })
+    default:
+      return { status: 'error', error: 'action not available to the panel: ' + action }
+  }
+}
+
+/** One panel call: the fixture when explicitly enabled, COM otherwise. */
+async function panelCall(action, args) {
+  if (!PANEL_ACTIONS.has(action)) return { status: 'error', error: 'action not allowed: ' + action }
+  if (fixture !== null) return fixtureCall(action, args)
+  return olk(action, args)
+}
+
 /** NewMailEx watcher state shared by the badge route and check tool. */
 const notify = {
   pending: [],   // new-mail events not yet fetched by the agent
@@ -395,6 +619,74 @@ export function apply(ctx) {
         res.end()
       },
     }), 'dsh-arya-maildesk: client beacon route')
+
+    // ---- panel routes (M1) ---------------------------------------------
+    // Health tells the panel which provider is answering, so fixture data is
+    // labelled in the UI instead of being mistaken for a real mailbox.
+    ctx.effect(() => webCtx.webServer.register({
+      kind: 'exact',
+      path: '/maildesk/api/health',
+      handler: async (req, res) => {
+        if (req.method !== 'GET') { res.statusCode = 405; res.end(); return }
+        if (!sameOrigin(req)) { res.statusCode = 403; res.end(); return }
+        res.setHeader('Content-Type', 'application/json; charset=utf-8')
+        res.end(JSON.stringify({ ok: true, provider: fixture !== null ? 'fixture' : 'com' }))
+      },
+    }), 'dsh-arya-maildesk: panel health route')
+
+    const readJsonBody = async (req, cap) => {
+      let body = ''
+      for await (const chunk of req) {
+        body += chunk
+        if (body.length > cap) return { error: 'request body too large' }
+      }
+      try {
+        return { value: JSON.parse(body) }
+      } catch {
+        return { error: 'invalid JSON body' }
+      }
+    }
+
+    ctx.effect(() => webCtx.webServer.register({
+      kind: 'exact',
+      path: '/maildesk/api/call',
+      handler: async (req, res) => {
+        res.setHeader('Content-Type', 'application/json; charset=utf-8')
+        if (req.method !== 'POST') {
+          res.statusCode = 405
+          res.end(JSON.stringify({ ok: false, error: 'POST only' }))
+          return
+        }
+        if (!sameOrigin(req)) {
+          res.statusCode = 403
+          res.end(JSON.stringify({ ok: false, error: 'cross-origin request refused' }))
+          return
+        }
+        const body = await readJsonBody(req, 256 * 1024)
+        if (body.error !== undefined) {
+          res.statusCode = 400
+          res.end(JSON.stringify({ ok: false, error: body.error }))
+          return
+        }
+        const payload = body.value !== null && typeof body.value === 'object' ? body.value : {}
+        const action = String(payload.action || '')
+        if (!PANEL_ACTIONS.has(action)) {
+          res.statusCode = 400
+          res.end(JSON.stringify({ ok: false, error: 'action not allowed: ' + action }))
+          return
+        }
+        try {
+          const args = payload.args !== null && typeof payload.args === 'object' ? payload.args : {}
+          const result = await panelCall(action, args)
+          // Always 200: the bridge reports its own failures as status:'error',
+          // and an HTTP status would make "no Outlook installed" look like a
+          // transport bug in the panel.
+          res.end(JSON.stringify({ ok: true, result }))
+        } catch (error) {
+          res.end(JSON.stringify({ ok: false, error: (error && error.message) || String(error) }))
+        }
+      },
+    }), 'dsh-arya-maildesk: panel call route')
   })
 
   ctx.tools.register({

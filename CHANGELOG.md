@@ -13,6 +13,10 @@ The second reason is the point of the fork. Every complaint the agent produced �
 **What changed**:
 - Identity: package and plugin `dsh-arya-maildesk`; all 23 tools `maildesk_*`; slot registrations, the storage id and the style element carry the new name; the watcher log is `%TEMP%\dsh-arya-maildesk-watch-debug.log`. Upstream keeps its own name inside `NOTICE`, `UPSTREAM.md` and `LICENSE` — that is provenance, not identity.
 - `repository`, `bugs` and `homepage` dropped from `package.json` until this fork has its own remote: they pointed at upstream, which would send bug reports to people who did not write this code.
+- **A mailbox panel**, not a bigger badge: folder rail, list with a real selection (click, shift-range, ctrl-toggle, arrows), reading pane, and mark read/unread, move and delete on the selection. The badge stays a doorbell for new arrivals.
+- One allowlisted host route, `POST /maildesk/api/call`, is the panel's only outlet. `send_draft`, `reply_mail` and every calendar write are absent from the allowlist, so nothing the panel can do leaves the machine.
+- `MAILDESK_FIXTURE=1` serves a synthetic mailbox so the interface is buildable and reviewable on a PC with no classic Outlook. Opt-in only: a COM failure is still reported as an error, never answered with fake mail.
+- `test/panel-api.test.mjs` drives the real route against the fixture provider: 16 assertions covering paging, sorting, unread filtering, the read-state and move/delete contracts, the count gate on delete, the send-path refusal, the cross-origin refusal and a malformed body.
 
 ## 2.12.0 — Mail management, and the plugin speaks English (first fork increment)
 

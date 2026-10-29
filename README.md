@@ -51,6 +51,14 @@
 |---|---|
 | ![expanded sidebar badge](assets/badge-wide.png) | ![collapsed rail badge](assets/badge-rail.png) |
 
+## The mail panel
+
+A **Mail** icon in the sidebar opens a three-pane mailbox: folder rail, message list with a real selection (click, shift-range, ctrl-toggle), reading pane, and the organize actions — mark read or unread, move to a folder, delete to Deleted Items. A page loads 100 rows and pages on demand; the unread-only filter and the sort run in Outlook, not in the browser.
+
+The data path is one allowlisted host route, `POST /maildesk/api/call`, guarded by the same origin check as the badge. It accepts `account`, `list_folders`, `list_mail`, `read_mail`, `mark_read`, `move_mail`, `delete_mail` and `open_mail`. **Sending is not on that list** — the panel can organize a mailbox, and only the agent's two-call confirmation can send from it.
+
+No Outlook on this machine? `MAILDESK_FIXTURE=1` serves a synthetic mailbox and the header says `FIXTURE DATA`, so the interface can be developed and reviewed without COM. It is opt-in on purpose: a COM failure is reported as an error, never answered with invented mail.
+
 ## Quick start
 
 ```sh

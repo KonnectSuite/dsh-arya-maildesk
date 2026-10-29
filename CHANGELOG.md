@@ -2,7 +2,28 @@
 
 This project's version narrative puts **why** before **what**. Every entry starts with the motivation.
 
-## 2.17.1 — Naming the Outlook you actually have
+## 1.0.0 — Our own product, counted from one
+
+**Why**: this began as someone else's plugin with a good idea and a hard ceiling — 18 tools, a badge, and no way to see more than one mail at a time. Almost everything you can touch now (the panel, the composer, the draft card, the Sidebar tab) was written in this repository, and the version number was still quoting a release line this project never published. A fork's number belongs to the fork. This is the point where the thing has its own name, its own tool prefix (`maildesk_*`), its own tests and its own face, so it starts counting at 1.0.0.
+
+**What it contains**:
+- **24 tools** over COM: the read/send/calendar set it inherited, plus `list_folders`, `list_mail`, `move_mail`, `delete_mail` and `mark_read` (the organize half), `compose_draft`/`compose_send` (harness-owned drafts) and `maildesk_compose` (the tool whose call renders as a card).
+- **A mail panel** — folder rail, a real selection, reading pane, paging, unread filter, sort pushed to Outlook, and the organize actions.
+- **A safe reading pane** — allowlisted HTML, remote images blocked, Proofpoint links unwrapped.
+- **Harness-owned drafts** — one per thread, sent from the composer, the conversation card or the Sidebar tab, behind a content-hash confirmation.
+- **The draft where the conversation is** — a keyed `tool.call.toolview` card and a right-Sidebar tab.
+- **A fixture provider** (`MAILDESK_FIXTURE=1`) so the whole interface is reviewable on a machine with no Outlook, and **59 offline assertions** (`npm test`) that run the real PowerShell case bodies and the real host routes.
+- English throughout, with the MIT notice and upstream provenance kept in `NOTICE` and `UPSTREAM.md`.
+
+**What is not proven**: no release of this code has read a real mailbox yet. The COM path has only been exercised against synthetic mail; the first real machine is expected to be a work laptop with classic Outlook.
+
+---
+
+## Fork lineage (before 1.0.0)
+
+This project started from `dsh-outlook` 2.11.0 (MIT). The entries below are that work under its old numbering, newest first, kept because they explain why each decision was made. They are history, not versions that will ever be published under this name.
+
+### 2.17.1 — Naming the Outlook you actually have
 
 **Why**: the first machine this was tried on had Outlook installed — the new one — and the bridge answered "install the classic Win32 Outlook app". That is the wrong sentence for someone who is looking at an Outlook window: it sends them to reinstall software they already have instead of telling them the two clients are different and only one has a COM surface.
 
@@ -11,7 +32,7 @@ This project's version narrative puts **why** before **what**. Every entry start
 - The old message stays for a machine with neither client.
 - Verified on a host running `Microsoft.OutlookForWindows` 1.2026.1013.100 (signed into a work account and two personal accounts): `POST /maildesk/api/call {"action":"account"}` returns the new text, and the panel shows it under its own "No classic Outlook answered on this machine" explanation with every action disabled and `unread count unavailable` rather than `0`.
 
-## 2.17.0 — The draft can sit beside the conversation
+### 2.17.0 — The draft can sit beside the conversation
 
 **Why**: the card in chat could show a draft, and `[Edit in panel]` took you to it, but "in panel" meant the chat disappeared. Reading the thread you are answering and writing the answer were still two different screens. The right Sidebar is the harness's own place for "something next to this conversation", so the draft belongs there too.
 
@@ -22,7 +43,7 @@ This project's version narrative puts **why** before **what**. Every entry start
 - All three surfaces poll `op: "get"`, so there is still exactly one draft per thread and no second copy of it anywhere.
 - `inject` is now `['slots', 'layout', 'sidebarRightTabs', 'sidebarRight']`.
 
-## 2.16.0 — The draft lives in the conversation
+### 2.16.0 — The draft lives in the conversation
 
 **Why**: the draft was reachable only by leaving the chat. You asked the agent for a reply, it answered "draft created", and the thing itself was in another panel — so the conversation about a mail and the mail you were writing could not be on screen together. A tool row saying `{"status":"ok","draftId":"draft-…"}` is not a draft; it is a receipt for one.
 
@@ -35,7 +56,7 @@ This project's version narrative puts **why** before **what**. Every entry start
 - **Fixed**: the agent's tools bypassed the fixture. `maildesk_list_mail` went straight to the bridge and reported "classic desktop Outlook not found" on a machine where the panel was serving fixture mail happily. The fixture check now sits in `olk()` itself, so tools and panel answer from the same mailbox.
 - `test/panel-api.test.mjs` is 29 assertions: the tool is registered, a reply draft's body is `<p>…</p>` paragraphs, a second call on the same thread returns the same id, and `op: "get"` 404s for an unknown draft.
 
-## 2.15.0 — Replies that belong to the harness, not to Outlook
+### 2.15.0 — Replies that belong to the harness, not to Outlook
 
 **Why**: the agent could draft, and the drafts were the problem. Every attempt left another item in Outlook's Drafts folder, so a thread asked about three times came back as three drafts, and the only way to see any of them was to leave the IDE and open Outlook. Contact lookup was poor enough that replying to the original mail was the reliable way to inherit its recipients. And a reply could not be written where the conversation about it was happening.
 
@@ -49,7 +70,7 @@ This project's version narrative puts **why** before **what**. Every entry start
 - `read_mail` now also returns `senderSmtp`, with a note that on corporate Exchange it can be an `EX:/O=…` directory name, so callers must test it for `@` before offering it as a recipient.
 - The fixture grew `compose_draft` and `compose_send`, stores the HTML body, and a sent reply reads back through `read_mail` exactly as it was sent — asserted in `test/panel-api.test.mjs`, which is now 26 assertions.
 
-## 2.14.0 — Mail you can read, not just list
+### 2.14.0 — Mail you can read, not just list
 
 **Why**: the panel listed mail and rendered the body as one flat paragraph, so an invoice, a trip sheet and a vendor notice all looked alike, and the quote you were about to answer lost its shape before you saw it. The plain-text path also erased a distinction that matters: *this mail has no HTML* and *this mail has HTML we refuse to render* both came out as text. A Proofpoint-rewritten link could not be checked before clicking it, and a tracking pixel was never a decision the reader got to make.
 
@@ -60,7 +81,7 @@ This project's version narrative puts **why** before **what**. Every entry start
 - The fixture's `read_mail` now serves deliberately hostile HTML — a table, a wrapped vendor link, a `javascript:` link, a tracking pixel, an inline `<script>` and an `onclick` — so the sanitizer is exercised through the same route the panel uses, not only in a unit test.
 - `test/panel-api.test.mjs` gained the assertion that `htmlBody` is absent unless html is asked for, that it contains `<table>` when it is, and that the raw bridge body still contains `<script` — the bridge must not quietly rewrite someone's mail.
 
-## 2.13.0 — Named dsh-arya-maildesk, and the plugin gets a face
+### 2.13.0 — Named dsh-arya-maildesk, and the plugin gets a face
 
 **Why**: two reasons, one of them embarrassing.
 
@@ -76,7 +97,7 @@ The second reason is the point of the fork. Every complaint the agent produced �
 - `MAILDESK_FIXTURE=1` serves a synthetic mailbox so the interface is buildable and reviewable on a PC with no classic Outlook. Opt-in only: a COM failure is still reported as an error, never answered with fake mail.
 - `test/panel-api.test.mjs` drives the real route against the fixture provider: 16 assertions covering paging, sorting, unread filtering, the read-state and move/delete contracts, the count gate on delete, the send-path refusal, the cross-origin refusal and a malformed body.
 
-## 2.12.0 — Mail management, and the plugin speaks English (first fork increment)
+### 2.12.0 — Mail management, and the plugin speaks English (first fork increment)
 
 *(This repository is a fork of `dsh-outlook`, base `5a2ec7d` / v2.11.0 — see `NOTICE` and `UPSTREAM.md`.)*
 
@@ -99,7 +120,7 @@ And the plugin talked to its user in Chinese: the badge, the popover, the toasts
 - `list_mail` no longer fails when a store does not expose `UnReadItemCount` (public folders, some archive add-ins): the field reports `-1`, meaning the store did not tell us, instead of aborting the whole listing.
 - `test/` — an offline harness that needs no Outlook at all: `folder-resolution.test.ps1` (extent/nesting checks plus 8 resolution cases, including a 78-character path and a 71-character entryId containing `/`) and `mail-actions.test.ps1`, which runs the **real** case bodies out of `lib/olk.ps1` against a fake COM model (59 assertions: paging, sort, unread-only, previews, move returning the new ids, the delete count gate refusing, both directions of read state, the folder walk). `npm test` runs both in child processes. This is what makes the COM layer provable on a machine with no Outlook installed.
 
-## 2.11.0 — Chat "open" links no longer leave dead tabs
+### 2.11.0 — Chat "open" links no longer leave dead tabs
 
 **Why**: the `[Open](…/olk-notify/open?entryId=…)` markdown link the agent posts in a conversation is a GET navigation — every click left behind a "opened in Outlook / this page can be closed" tab. The most common action ("take a look at this mail") was the one that littered the browser. The same link also hard-coded `127.0.0.1:3080`, so on a custom-port deployment the click failed outright (README listed it as a known boundary).
 
@@ -109,7 +130,7 @@ And the plugin talked to its user in Chinese: the badge, the popover, the toasts
 - Both the interception listener and the toast are registered inside a fiber effect, so disabling or updating the plugin removes them (listener, timer and DOM node).
 - Pending-queue cleanup and the badge decrement are unchanged: the sidebar and the chat link now go through exactly the same POST handler.
 
-## 2.10.1 — Portability hardening before the public release
+### 2.10.1 — Portability hardening before the public release
 
 **Why**: the plugin ships to arbitrary machines. It cannot assume its install directory is writable, that Outlook was ever installed, or that the README is current.
 
@@ -120,7 +141,7 @@ And the plugin talked to its user in Chinese: the badge, the popover, the toasts
 - README refreshed to the actual 18 tools / 43 cases, the four meeting tools and `maildesk_open_mail` documented, and the known-boundaries section updated (port assumptions, the `OLK_WATCH` switch, log location).
 - `meeting_update`/`meeting_cancel` descriptions aligned with what the code does (uniform two-call confirmation).
 
-## 2.10.0 — Click a mail in the conversation to open it, and a bridge encoding hazard fixed
+### 2.10.0 — Click a mail in the conversation to open it, and a bridge encoding hazard fixed
 
 **Why**: search and new-mail results returned only an entryId, so a user who wanted to read the original had to go find it in Outlook — the most common action ("take a look at this mail") was the most roundabout. Testing also exposed something worse: `olk.ps1`/`watch.ps1` were BOM-less UTF-8, and PowerShell 5.1's `Get-Content -Raw` decodes with the system code page (GBK) — every Chinese literal came out garbled and the whole file failed to parse. Production had only survived because the system code page happened not to be GBK.
 
@@ -131,31 +152,31 @@ And the plugin talked to its user in Chinese: the badge, the popover, the toasts
 - Every mail in the sidebar popover became a clickable button: POST to the open route, removed from the list on success (badge decrements immediately, not at the next 20s poll), beacon on failure.
 - `olk.ps1`/`watch.ps1` got a UTF-8 BOM, killing the PS 5.1 ANSI misread at the root.
 
-## 2.6.1 — The badge stays visible when the sidebar is collapsed
+### 2.6.1 — The badge stays visible when the sidebar is collapsed
 
 **Why**: in collapsed mode the badge protruded past the button's edge (`top:-4px`) and was either clipped by the sidebar's collapse-animation container or covered by the row above — so the user could not see new mail, and the notification feature failed exactly in the quiet rail form where it mattered most.
 
 **What changed**: in collapsed mode a 14px dot is drawn inside the 36px circle's top-right corner; the expanded outside badge is unchanged; the badge got `z-index:1`.
 
-## 2.6.0 — From DOM injection to an official slot
+### 2.6.0 — From DOM injection to an official slot
 
 **Why**: the old version injected its button straight into the shell's footArea container and defended itself with two MutationObservers. That bought positional freedom at the price of three real incidents: before v2.5.1 an observer microtask storm froze the entire page ("Loading plugins…"); substring matching against hashed CSS class names broke silently whenever the shell was upgraded; and hover feedback never rendered at all because inline styles outranked the stylesheet.
 
 **What changed**: the whole button now registers through the `sidebar.footer.action` slot (the same official channel dsh-dock's Whale Bay menu uses), and React owns its lifecycle — observer, self-healing and class-name probing are all deleted (about 150 lines of defensive code gone). `wide`/rail geometry comes from the slot props; the popover became a React Portal (click-outside still closes it). `order:10` keeps the original visual position (above Whale Bay).
 
-## 2.5.3 — Hover feedback actually renders now
+### 2.5.3 — Hover feedback actually renders now
 
 **Why**: v2.5.2 fixed the hover colour variable (`--dsh-` → `--dsw-`) and the user still saw no background — an inline `background:'transparent'` always outranks a stylesheet's `:hover` rule.
 
 **What changed**: the transparent background moved out of the inline style and into the injected stylesheet so `:hover` can override it.
 
-## 2.5.2 — Aligned with the native settings button, item by item
+### 2.5.2 — Aligned with the native settings button, item by item
 
 **Why**: hover used the wrong token prefix (`--dsh-`, a variable that does not exist), and the collapsed margin did not match the native settings button (4px vs 8px/10px), which is visibly crooked side by side.
 
 **What changed**: hover token aligned to `--dsw-alias-interactive-bg-hover`; rail margin aligned to `8px 0 10px`; the remaining geometry parameters were checked one by one and were already correct.
 
-## 2.6.0 batch — 14 fixes from a deep review
+### 2.6.0 batch — 14 fixes from a deep review
 
 Deterministic bugs and hardening found by a security review (all covered by cases in TESTCASES.md):
 
@@ -170,6 +191,6 @@ Deterministic bugs and hardening found by a security review (all covered by case
 - `account` matches by the default Inbox's DeliveryStore.
 - DASL LIKE strips `%`/`_` wildcards; a failed send cleans up the orphan draft; the popover got proper ARIA semantics (dialog).
 
-## 2.5.1 and earlier
+### 2.5.1 and earlier
 
 (No changelog was kept for these versions; the quirks and the field lessons are encoded in the `lib/olk.ps1` header comment.)

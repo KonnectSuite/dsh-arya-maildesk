@@ -5,7 +5,7 @@
 
 [![DSH Plugin](https://img.shields.io/badge/DSH-Plugin-blue)](https://www.npmjs.com/package/@deepseek-ai/dsh) [![Platform](https://img.shields.io/badge/Platform-Windows%20%2B%20classic%20Outlook-0078D4)](https://support.microsoft.com/en-us/office) [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](./LICENSE) [![Tools](https://img.shields.io/badge/tools-24-8A2BE2)](#what-it-delivers)
 
-> **This is a fork.** Upstream is [UnknowCao/dsh-outlook](https://github.com/UnknowCao/dsh-outlook) at `5a2ec7d` (v2.11.0), MIT, and it is published as `dsh-arya-maildesk` so it can be installed next to the upstream release: different package name, different tool prefix. This fork adds delete, move/archive, read-state and a paged folder listing — the "read" half of the plugin was complete, the "organize" half was missing. `NOTICE` records what came from upstream; `UPSTREAM.md` records how to diff against it.
+> **Where this came from.** It started as [UnknowCao/dsh-outlook](https://github.com/UnknowCao/dsh-outlook) at `5a2ec7d` (v2.11.0, MIT): a solid read/send bridge with 18 tools and a badge. The organize half was missing — delete, move/archive, read state, a folder tree, a paged listing — and the interface stopped at the badge, so the mail panel, the composer, the draft card and the Sidebar tab are new here. `NOTICE` keeps the upstream attribution; the upstream version line was retired at 1.0.0, see `CHANGELOG.md`.
 
 *Zero-credential Outlook automation for AI agents on Windows: drives your local desktop Outlook client via COM. No Graph API app registration, no SMTP passwords, no tenant admin rights — everything that leaves the machine passes a three-layer human approval gate.*
 
@@ -109,7 +109,7 @@ Then restart the profile (or rely on `patchReload: live`). There is no second st
 
 **Prerequisites**: Windows + classic desktop Outlook (Win32 `OUTLOOK.EXE`) signed in + Windows PowerShell 5.1 (ships with the OS). No tenant admin rights.
 
-> This fork is not published yet; the commands above install the upstream release. See `UPSTREAM.md` for the release checklist.
+> Published as `dsh-arya-maildesk` 1.0.0. It coexists with upstream's `dsh-outlook`: different package, different tool prefix (`maildesk_*` vs `outlook_*`), so neither shadows the other.
 
 ## Try saying
 
@@ -139,22 +139,26 @@ Then restart the profile (or rely on `patchReload: live`). There is no second st
 
 **What it will not do**: send anything silently; store or expose your mailbox credentials (it never sees them); auto-send a draft; write an attachment over an existing file or outside the chosen directory.
 
-Known boundaries: the `/olk-notify/*` routes are reachable only from this host and same-origin checked (other local processes and non-browser requests can still read new-mail subject metadata); the port inside a chat "open" link does not matter for a plain left click, because the client intercepts by pathname and posts to the page's own origin; `/olk-notify/open` is POST-only, so a modifier-click or middle-click on a chat link gets 405 (deliberate; the `maildesk_open_mail` tool is unaffected); several tabs share one pending queue; `OLK_WATCH=0` turns the new-mail watcher off. This fork: folder names are matched in English only (`Inbox`, `Sent Items`, `Drafts`, `Deleted Items`) — a mailbox whose folders are named in another language must be addressed by entryId; `delete_mail` is a soft delete to Deleted Items and there is no permanent-delete path; `move_mail` changes entryIds, so re-read the folder afterwards.
+Known boundaries: the `/olk-notify/*` routes are reachable only from this host and same-origin checked (other local processes and non-browser requests can still read new-mail subject metadata); the port inside a chat "open" link does not matter for a plain left click, because the client intercepts by pathname and posts to the page's own origin; `/olk-notify/open` is POST-only, so a modifier-click or middle-click on a chat link gets 405 (deliberate; the `maildesk_open_mail` tool is unaffected); several tabs share one pending queue; `OLK_WATCH=0` turns the new-mail watcher off. Limits of this build: folder names are matched in English only (`Inbox`, `Sent Items`, `Drafts`, `Deleted Items`) — a mailbox whose folders are named in another language must be addressed by entryId; `delete_mail` is a soft delete to Deleted Items and there is no permanent-delete path; `move_mail` changes entryIds, so re-read the folder afterwards.
 
 ## Layout
 
 ```
-index.js          host half: 24 tool registrations, two-call confirmation, content hash,
-                  watcher management, state/open routes
-client.js         browser half: sidebar.footer.action slot button, badge, popover
-                  (React Portal, click-to-open)
+index.js          host half: 24 tool registrations, the allowlisted panel route, the
+                  draft store and the two compose routes, the fixture provider,
+                  two-call confirmation, content hash, watcher management
+client.js         browser half: the Mail panel (folders, list, reading pane, composer),
+                  the draft card at tool.call.toolview, the right-Sidebar draft tab,
+                  and the sidebar badge with click-to-open
 lib/olk.ps1       the COM bridge: every Outlook operation, the token gate, and the
                   localization quirks (see the file header)
 lib/watch.ps1     NewMailEx resident listener: pushes arrivals, self-heals after 30s
 cordis.patch.yml  host row declaration
+test/             offline suites: folder resolution and mail actions against a fake
+                  COM model, plus the panel routes driven through fake req/res
 NOTICE            upstream attribution (MIT) and the pinned base commit
-UPSTREAM.md       how this fork relates to upstream, and how to diff it
-TESTCASES.md      49 test cases (pipeline / rendering / coexistence / routes /
+UPSTREAM.md       how this build relates to upstream, and how to diff it
+TESTCASES.md      49 cases (pipeline / rendering / coexistence / routes /
                   click-to-open / link interception / known boundaries)
 CHANGELOG.md      version narrative (why before what)
 ```
@@ -163,6 +167,10 @@ Diagnostic log: `%TEMP%\dsh-arya-maildesk-watch-debug.log` (rotated at 1 MB).
 
 ## Verification and tests
 
-- 49 cases cover the whole chain ([TESTCASES.md](./TESTCASES.md)); the automated ones are all verified against a real Exchange mailbox: new mail → badge → clear, watcher killed and back within 30s, both confirmation-swap attacks blocked, route 405/413, log rotation, open-marks-read, the GBK code page regression, and chat link interception (v2.11.0 group H).
-- The new mail-management actions (v2.12.0) are **not yet covered by a case** and have not run against a live Outlook — they were added on a machine without Outlook, so only their PowerShell parse and the tool registration are proven. Run `maildesk_list_folders` first on a real machine.
-- COM quirks (two-stage Jet/DASL filtering, the `Restrict` date format, `IncludeRecurrences` reporting MaxInt, PowerShell 5.1 stdin encoding) are all encoded in `lib/olk.ps1` and verified against a real Exchange mailbox.
+**What runs offline, on a machine with no Outlook:**
+
+- `npm test` — 59 assertions in two suites. `test/folder-resolution.test.ps1` (14) checks that the resolver helper is not nested inside another function, and resolves the default folder, the well-known English names, a 78-character deep path and a 71-character entryId containing `/`. `test/mail-actions.test.ps1` (45) runs the **real** PowerShell case bodies against a fake COM object model — paging with a skipped non-mail item, sorting, preview truncation, unread-only, move returning new entryIds and isolating per-item failures, the `expected` count gate refusing **and deleting nothing**, mark read in both directions, and the folder-tree BFS.
+- `node test/panel-api.test.mjs` — 29 assertions driving the real host routes with fake `req`/`res`: the allowlist, paging and every row field, the hostile-HTML fixture, mark read, move, delete, the confirmation hash (missing → `needs-confirmation`, wrong → refused, matching → sent once), draft reuse on the same thread, and 403/405/400 on the transport edges.
+
+**What is not verified**: no release of this code has read a real mailbox. Everything above runs against synthetic mail. The COM path is proven only in the sense that its PowerShell parses and its JSON contract is exercised; the first real mailbox — expected to be a work laptop with classic Outlook — is what closes that gap. The 49 cases in [TESTCASES.md](./TESTCASES.md) were inherited from upstream, where its author ran them against Exchange; the actions added here (2.12.0 and later) and the whole panel/composer path have no case of their own yet. Run `maildesk_list_folders` first on a real machine.
+- COM quirks (two-stage Jet/DASL filtering, the `Restrict` date format, `IncludeRecurrences` reporting MaxInt, PowerShell 5.1 stdin encoding) are all encoded in `lib/olk.ps1` and were verified against a real Exchange mailbox by the upstream author.

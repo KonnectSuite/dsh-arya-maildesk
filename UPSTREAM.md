@@ -7,6 +7,19 @@
 | Remote name | `upstream` |
 | Licence | MIT - see LICENSE and NOTICE |
 
+## Status: the fork was a starting point, not a relationship
+
+This project is no longer tracking upstream. It began from that commit, kept the
+COM layer it could not have re-derived (the Exchange quirks documented in
+`lib/olk.ps1`), and has since grown its own panel, composer, draft store, card
+and Sidebar tab. The upstream version line was retired at 1.0.0.
+
+The remote and the pinned commit stay here for two reasons: the MIT notice
+requires the attribution to be traceable, and a diff against `5a2ec7d` is still
+the fastest way to see what the COM layer looked like before this project
+started changing it. Merging upstream is not planned; if a fix there ever looks
+worth taking, take it by hand and note it in `CHANGELOG.md`.
+
 ## Why a pinned commit, not a moving `main`
 
 The upstream COM layer encodes hard-won Exchange quirks that are not written

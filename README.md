@@ -101,15 +101,16 @@ The tab carries `[Send…] [Open in panel] [Discard]` and a `Close this tab` lin
 ## Quick start
 
 ```sh
-# short name from npm (recommended)
-dsh plugin --profile web add dsh-arya-maildesk
+# from the Arya Plugin Market: Plugins → Arya Plugin Market → Mail desk → Install
+# or from a terminal:
+dsh plugin --profile web add @aryacode/dsh-arya-maildesk
 ```
 
 Then restart the profile (or rely on `patchReload: live`). There is no second step — no credential, no app registration, no Outlook setting to change.
 
 **Prerequisites**: Windows + classic desktop Outlook (Win32 `OUTLOOK.EXE`) signed in + Windows PowerShell 5.1 (ships with the OS). No tenant admin rights.
 
-> Published as `dsh-arya-maildesk` 1.0.0. It coexists with upstream's `dsh-outlook`: different package, different tool prefix (`maildesk_*` vs `outlook_*`), so neither shadows the other.
+> Published as `@aryacode/dsh-arya-maildesk` 1.0.0. It coexists with upstream's `dsh-outlook`: different package, different tool prefix (`maildesk_*` vs `outlook_*`), so neither shadows the other.
 
 ## Try saying
 
@@ -174,3 +175,52 @@ Diagnostic log: `%TEMP%\dsh-arya-maildesk-watch-debug.log` (rotated at 1 MB).
 
 **What is not verified**: no release of this code has read a real mailbox. Everything above runs against synthetic mail. The COM path is proven only in the sense that its PowerShell parses and its JSON contract is exercised; the first real mailbox — expected to be a work laptop with classic Outlook — is what closes that gap. The 49 cases in [TESTCASES.md](./TESTCASES.md) were inherited from upstream, where its author ran them against Exchange; the actions added here (2.12.0 and later) and the whole panel/composer path have no case of their own yet. Run `maildesk_list_folders` first on a real machine.
 - COM quirks (two-stage Jet/DASL filtering, the `Restrict` date format, `IncludeRecurrences` reporting MaxInt, PowerShell 5.1 stdin encoding) are all encoded in `lib/olk.ps1` and were verified against a real Exchange mailbox by the upstream author.
+
+## Where it appears in the app
+
+| What you see | What it is |
+|---|---|
+| **Mail** row in the sidebar | opens the mail panel: folder rail, message list, reading pane, composer |
+| **Mail** chip at the bottom of the sidebar | new-mail count; click it for the latest arrivals, click one to open it in Outlook |
+| `maildesk_*` tools | what the agent calls; they answer from the same mailbox the panel shows |
+| A card in the conversation | a draft the agent composed — edit it, send it, or discard it |
+| A **Mail draft** tab at the right | the same draft, beside the conversation, while you keep chatting |
+
+## First run
+
+Open **Mail**, click a folder, click a message. That exercises the whole read path (`list_folders` → `list_mail` → `read_mail`) before anything writes. If the reading pane shows a red explanation instead of a message list, the bridge could not reach Outlook — see *Troubleshooting*.
+
+## Settings
+
+There is no settings screen; two environment variables change behaviour, read when the host half starts:
+
+| Variable | Default | Effect |
+|---|---|---|
+| `MAILDESK_FIXTURE` | unset | `1` serves a synthetic mailbox (~100 mails, hostile HTML, all folders) instead of COM — for reviewing the interface on a machine without Outlook. The panel then shows a `FIXTURE DATA` pill. Never reads or writes real mail. |
+| `OLK_WATCH` | unset | `0` turns the new-mail watcher off (no badge count, no `check_new` queue); useful when you do not want a resident PowerShell listener. |
+
+## Remove
+
+```sh
+dsh plugin --profile <profile> remove @aryacode/dsh-arya-maildesk
+```
+
+Nothing of yours is left behind: drafts live in the host process's memory, the fixture is generated on demand. The only file it writes is a diagnostic log, `%TEMP%\dsh-arya-maildesk-watch-debug.log`, which you can delete. If you staged the tarball from the market, `<profile>\.dsh-market\releases\` keeps a copy — harmless, and shared with anything else installed from the market.
+
+## Troubleshooting
+
+**The panel says "No classic Outlook answered on this machine."**
+You are on the new Outlook for Windows (the WebView2 client), or Office is installed without Outlook. The new client has no COM surface — this is a property of the client, not a setting. Use a machine with classic Outlook, or set `MAILDESK_FIXTURE=1` to work on the interface with synthetic mail.
+
+**A send is refused with `SEND BLOCKED: no human confirmation token`.**
+That is the third gate doing its job: something tried to send without going through the panel's or the card's confirmation. Send again from the panel or the card, where confirming is a click.
+
+**Nothing in the sidebar, or the tools are missing.**
+The host half did not activate. Restart the profile and check the app log for `did not activate`, `import failed` or `duplicate factory`. If `dsh-outlook` is also installed, that is fine — the tool prefixes differ (`outlook_*` vs `maildesk_*`).
+
+**Search finds nothing for a word you can see in a mail.**
+`maildesk_search_mail` filters through Outlook's own query engine, which is stricter than a text search. Narrow by folder and date first; the two-stage Jet/DASL filter is described in `lib/olk.ps1`'s header.
+
+## Licence
+
+MIT. This is a fork of [UnknowCao/dsh-outlook](https://github.com/UnknowCao/dsh-outlook) at `5a2ec7d` (MIT) — see [NOTICE](./NOTICE) for the attribution and [UPSTREAM.md](./UPSTREAM.md) for what was kept, what was replaced, and how to diff against upstream.

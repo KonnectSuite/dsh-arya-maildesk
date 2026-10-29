@@ -53,6 +53,9 @@
 
 ## The mail panel
 
+![The mail panel: folder rail, message list, reading pane](docs/panel.png)
+
+
 A **Mail** icon in the sidebar opens a three-pane mailbox: folder rail, message list with a real selection (click, shift-range, ctrl-toggle), reading pane, and the organize actions — mark read or unread, move to a folder, delete to Deleted Items. A page loads 100 rows and pages on demand; the unread-only filter and the sort run in Outlook, not in the browser.
 
 The data path is one allowlisted host route, `POST /maildesk/api/call`, guarded by the same origin check as the badge. It accepts `account`, `list_folders`, `list_mail`, `read_mail`, `mark_read`, `move_mail`, `delete_mail` and `open_mail`. **Sending is not on that list** — the panel can organize a mailbox, and only the agent's two-call confirmation can send from it.

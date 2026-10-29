@@ -1,4 +1,4 @@
-/* dsh-outlook client face v2.6.1 (hand-written, zero build step).
+/* dsh-arya-maildesk client face v2.6.1 (hand-written, zero build step).
  *
  * v2.6.1 — rail-mode badge: the count chip sits INSIDE the 36px circle's
  * top right (14px dot) in the collapsed sidebar, so it can never be
@@ -31,7 +31,7 @@
  * whose factory receives `require` for kernel-provided modules.
  */
 window.__ModuleLoader__.load({
-  id: 'dsh-outlook',
+  id: 'dsh-arya-maildesk',
   factory: (require) => {
     const React = require('react')
     const ReactDOM = require('react-dom')
@@ -59,9 +59,9 @@ window.__ModuleLoader__.load({
      */
     function ensureStyles() {
       if (document.head === null) return null
-      if (document.getElementById('dsh-outlook-styles') !== null) return null
+      if (document.getElementById('dsh-arya-maildesk-styles') !== null) return null
       const style = document.createElement('style')
-      style.id = 'dsh-outlook-styles'
+      style.id = 'dsh-arya-maildesk-styles'
       style.textContent = [
         '[data-slot="sidebar.footer.action"]{',
         '  display: flex !important; /* override the inline display:contents */',
@@ -213,7 +213,7 @@ window.__ModuleLoader__.load({
           ref: btnRef,
           type: 'button',
           className: 'olk-trigger' + (wide ? '' : ' olk-rail'),
-          'data-dsh-plugin': 'dsh-outlook',
+          'data-dsh-plugin': 'dsh-arya-maildesk',
           'data-dsh-part': 'sidebar-entry',
           'aria-haspopup': 'dialog',
           'aria-label': n > 0 ? 'Outlook, ' + n + ' new' : 'Outlook mail',
@@ -288,7 +288,7 @@ window.__ModuleLoader__.load({
     }
 
     return {
-      name: 'dsh-outlook',
+      name: 'dsh-arya-maildesk',
       inject: ['slots'],
       apply(ctx) {
         beacon('apply called (slot registration)')
@@ -296,7 +296,7 @@ window.__ModuleLoader__.load({
         if (stylesTag !== null) {
           ctx.effect(() => () => {
             if (stylesTag.parentNode !== null) stylesTag.parentNode.removeChild(stylesTag)
-          }, 'dsh-outlook: styles')
+          }, 'dsh-arya-maildesk: styles')
         }
         // Capture-phase delegation survives React re-renders of the chat
         // surface; the listener itself lives in this fiber's effect.
@@ -308,7 +308,7 @@ window.__ModuleLoader__.load({
           for (const div of document.querySelectorAll('.olk-toast')) {
             if (div.parentNode !== null) div.parentNode.removeChild(div)
           }
-        }, 'dsh-outlook: chat link interception')
+        }, 'dsh-arya-maildesk: chat link interception')
         ctx.slots.inject('sidebar.footer.action', () => ctx.slots.register(
           {
             name: 'sidebar.footer.action',

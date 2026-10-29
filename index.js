@@ -1,5 +1,5 @@
 /**
- * dsh-outlook — Outlook COM automation for DSH Harness (Windows).
+ * dsh-arya-maildesk — Outlook COM automation for DSH Harness (Windows).
  *
  * Bridges the local desktop Outlook client via a PowerShell COM dispatcher
  * (lib/olk.ps1). Read operations (account, search/read mail, calendar query,
@@ -20,7 +20,7 @@
  * action name travels in the OLK_ACTION environment variable, arguments
  * travel as ONE JSON object on STDIN (env vars cap near 32 KB), and the
  * result comes back as one JSON object on stdout.
- * @module dsh-outlook
+ * @module dsh-arya-maildesk
  */
 
 import { spawn } from 'node:child_process'
@@ -30,7 +30,7 @@ import { tmpdir } from 'node:os'
 import { fileURLToPath } from 'node:url'
 import { join, dirname } from 'node:path'
 
-export const name = 'dsh-outlook'
+export const name = 'dsh-arya-maildesk'
 export const inject = ['tools']
 
 const HERE = dirname(fileURLToPath(import.meta.url))
@@ -42,7 +42,7 @@ const TIMEOUT_MS = 120000
  *  OS temp dir, NOT the plugin install dir — a global/DSH install location
  *  can be read-only (then the log silently no-ops, which is fine for
  *  diagnostics). Truncates at 1 MB so it cannot grow unbounded. */
-const WATCH_LOG = join(tmpdir(), 'dsh-outlook-watch-debug.log')
+const WATCH_LOG = join(tmpdir(), 'dsh-arya-maildesk-watch-debug.log')
 const WATCH_LOG_MAX = 1024 * 1024
 function wlog(message) {
   try {
@@ -230,7 +230,7 @@ function startWatcher(ctx) {
       `Invoke-Expression (Get-Content -Raw -Encoding UTF8 '${WATCH.replace(/'/g, "''")}')`,
     ], { windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] })
     wlog('spawned pid=' + child.pid)
-    console.info('[dsh-outlook] watcher spawned (pid ' + child.pid + ')')
+    console.info('[dsh-arya-maildesk] watcher spawned (pid ' + child.pid + ')')
     child.on('error', (e) => wlog('spawn error: ' + e.message))
     let buf = ''
     child.stdout.on('data', (d) => {
@@ -245,30 +245,30 @@ function startWatcher(ctx) {
           const ev = JSON.parse(line)
           if (ev.type === 'hello' || ev.type === 'tick') {
             notify.unread = ev.unread
-            if (ev.type === 'hello') console.info('[dsh-outlook] watcher online, unread=' + ev.unread)
+            if (ev.type === 'hello') console.info('[dsh-arya-maildesk] watcher online, unread=' + ev.unread)
           } else if (ev.type === 'newmail') {
             notify.pending.push({ entryId: ev.entryId, subject: ev.subject, sender: ev.sender, received: ev.received })
             if (notify.pending.length > 50) notify.pending.shift()
-            console.info('[dsh-outlook] new mail: [' + ev.sender + '] ' + ev.subject)
+            console.info('[dsh-arya-maildesk] new mail: [' + ev.sender + '] ' + ev.subject)
           } else if (ev.type === 'no-outlook') {
             // Classic Outlook not installed on this machine: the watcher
             // exits with code 3 right after this; do not restart it.
-            console.info('[dsh-outlook] ' + (ev.message || 'classic Outlook not installed') + ' — badge watcher disabled (tools still available if Outlook appears later via a profile restart)')
+            console.info('[dsh-arya-maildesk] ' + (ev.message || 'classic Outlook not installed') + ' — badge watcher disabled (tools still available if Outlook appears later via a profile restart)')
           }
         } catch { /* partial line or non-JSON noise */ }
       }
     })
-    child.stderr.on('data', (d) => { const s = String(d).trim(); if (s) { wlog('stderr: ' + s.slice(0, 200)); console.error('[dsh-outlook] watcher stderr: ' + s.slice(0, 200)) } })
+    child.stderr.on('data', (d) => { const s = String(d).trim(); if (s) { wlog('stderr: ' + s.slice(0, 200)); console.error('[dsh-arya-maildesk] watcher stderr: ' + s.slice(0, 200)) } })
     child.on('close', (code, signal) => {
       wlog('closed code=' + code + ' signal=' + signal + ' stopped=' + stopped)
       if (stopped) return
       if (code === 3) {
         // Watcher's "classic Outlook not installed" exit: no restart loop
         // on machines without desktop Outlook (public-distribution safety).
-        console.warn('[dsh-outlook] watcher disabled: classic desktop Outlook not installed')
+        console.warn('[dsh-arya-maildesk] watcher disabled: classic desktop Outlook not installed')
         return
       }
-      console.warn('[dsh-outlook] watcher exited (code ' + code + '), restarting in 30s')
+      console.warn('[dsh-arya-maildesk] watcher exited (code ' + code + '), restarting in 30s')
       restartTimer = setTimeout(spawnWatcher, 30000)
     })
   }
@@ -284,7 +284,7 @@ function startWatcher(ctx) {
       if (restartTimer !== null) clearTimeout(restartTimer)
       if (child !== null) { try { child.kill() } catch { /* already gone */ } }
     }
-  }, 'dsh-outlook: newmail watcher')
+  }, 'dsh-arya-maildesk: newmail watcher')
 }
 
 /**
@@ -293,7 +293,7 @@ function startWatcher(ctx) {
  */
 export function apply(ctx) {
   if (process.platform !== 'win32') {
-    console.info('[dsh-outlook] Windows only — skipping tool registration')
+    console.info('[dsh-arya-maildesk] Windows only — skipping tool registration')
     return
   }
 
@@ -326,7 +326,7 @@ export function apply(ctx) {
           unread: notify.unread,
         }))
       },
-    }), 'dsh-outlook: badge state route')
+    }), 'dsh-arya-maildesk: badge state route')
     // Click-to-open route: POST-only JSON, serving the sidebar popover and
     // the chat-link click interception (both fetch same-origin). The GET
     // navigation fallback / result page was REMOVED in v2.11.0 — chat
@@ -373,7 +373,7 @@ export function apply(ctx) {
         res.statusCode = r.status === 'ok' ? 200 : 500
         res.end(JSON.stringify({ ok: r.status === 'ok', subject: r.subject, sender: r.sender, error: r.error }))
       },
-    }), 'dsh-outlook: open-mail route')
+    }), 'dsh-arya-maildesk: open-mail route')
     ctx.effect(() => webCtx.webServer.register({
       kind: 'exact',
       path: '/olk-notify/api/client-log',
@@ -394,11 +394,11 @@ export function apply(ctx) {
         res.statusCode = 204
         res.end()
       },
-    }), 'dsh-outlook: client beacon route')
+    }), 'dsh-arya-maildesk: client beacon route')
   })
 
   ctx.tools.register({
-    name: 'outlook_account',
+    name: 'maildesk_account',
     description: 'Get the currently configured primary Outlook account name and SMTP address. Read-only.',
     parameters: { type: 'object', additionalProperties: true, properties: {} },
     output: {
@@ -410,13 +410,13 @@ export function apply(ctx) {
   })
 
   ctx.tools.register({
-    name: 'outlook_open_mail',
-    description: 'Open one email in a desktop Outlook inspector window by entryId (from outlook_search_mail / outlook_check_new). Local action: nothing leaves the machine, no confirmation needed. When presenting search results in chat, prefer composing a clickable markdown link per mail, e.g. [Open in Outlook](http://127.0.0.1:3080/olk-notify/open?entryId=<entryId>) — the user can click it to open the mail directly.',
+    name: 'maildesk_open_mail',
+    description: 'Open one email in a desktop Outlook inspector window by entryId (from maildesk_search_mail / maildesk_check_new). Local action: nothing leaves the machine, no confirmation needed. When presenting search results in chat, prefer composing a clickable markdown link per mail, e.g. [Open in Outlook](http://127.0.0.1:3080/olk-notify/open?entryId=<entryId>) — the user can click it to open the mail directly.',
     parameters: {
       type: 'object',
       additionalProperties: true,
       properties: {
-        entryId: { type: 'string', description: 'entryId from outlook_search_mail or outlook_check_new.' },
+        entryId: { type: 'string', description: 'entryId from maildesk_search_mail or maildesk_check_new.' },
       },
       required: ['entryId'],
     },
@@ -429,8 +429,8 @@ export function apply(ctx) {
   })
 
   ctx.tools.register({
-    name: 'outlook_search_mail',
-    description: 'Search emails in the local Outlook mailbox (read-only). Default: last 14 days of Inbox, newest first. Supports arbitrary folder paths ("Inbox/ProjectA", "Sent Items"), recipient-side matching (to), and exact date ranges (dateFrom/dateTo override days). Returns entryId values usable with outlook_read_mail. Tip: when listing results to the user, append a clickable open link per mail: [Open](http://127.0.0.1:3080/olk-notify/open?entryId=<entryId>).',
+    name: 'maildesk_search_mail',
+    description: 'Search emails in the local Outlook mailbox (read-only). Default: last 14 days of Inbox, newest first. Supports arbitrary folder paths ("Inbox/ProjectA", "Sent Items"), recipient-side matching (to), and exact date ranges (dateFrom/dateTo override days). Returns entryId values usable with maildesk_read_mail. Tip: when listing results to the user, append a clickable open link per mail: [Open](http://127.0.0.1:3080/olk-notify/open?entryId=<entryId>).',
     parameters: {
       type: 'object',
       additionalProperties: true,
@@ -454,13 +454,13 @@ export function apply(ctx) {
   })
 
   ctx.tools.register({
-    name: 'outlook_read_mail',
-    description: 'Read one full email by its entryId (obtained from outlook_search_mail). Returns subject, sender, recipients, body text and attachment names. Read-only.',
+    name: 'maildesk_read_mail',
+    description: 'Read one full email by its entryId (obtained from maildesk_search_mail). Returns subject, sender, recipients, body text and attachment names. Read-only.',
     parameters: {
       type: 'object',
       additionalProperties: true,
       properties: {
-        entryId: { type: 'string', description: 'entryId from outlook_search_mail.' },
+        entryId: { type: 'string', description: 'entryId from maildesk_search_mail.' },
         maxChars: { type: 'number', description: 'Max body characters. Default 8000.' },
       },
       required: ['entryId'],
@@ -474,8 +474,8 @@ export function apply(ctx) {
   })
 
   ctx.tools.register({
-    name: 'outlook_draft_mail',
-    description: 'Create an email DRAFT in the Outlook Drafts folder. Nothing is sent; the user can review and send it manually in Outlook, or ask for outlook_send_mail which confirms before sending.',
+    name: 'maildesk_draft_mail',
+    description: 'Create an email DRAFT in the Outlook Drafts folder. Nothing is sent; the user can review and send it manually in Outlook, or ask for maildesk_send_mail which confirms before sending.',
     parameters: {
       type: 'object',
       additionalProperties: true,
@@ -498,7 +498,7 @@ export function apply(ctx) {
   })
 
   ctx.tools.register({
-    name: 'outlook_send_mail',
+    name: 'maildesk_send_mail',
     description: 'Send an email through the local Outlook client. TWO-CALL CONFIRMATION with EDITABLE popup: without confirmed:true the call returns needs-confirmation with the exact content and the editable field list; show it to the user in-session — they may allow as-is, edit any field (to/cc/subject/body) via free-text answers, or reject. If edited, retry with the edited arguments (one more confirmation of the edited content), then confirmed:true only after the user allows. Nothing is sent on the first call.',
     parameters: {
       type: 'object',
@@ -545,8 +545,8 @@ export function apply(ctx) {
   })
 
   ctx.tools.register({
-    name: 'outlook_calendar_query',
-    description: 'List calendar events for the next N days (default 7) from the local Outlook client. Each event carries an entryId usable with outlook_meeting_update / outlook_meeting_cancel, plus an isMeeting flag. Read-only.',
+    name: 'maildesk_calendar_query',
+    description: 'List calendar events for the next N days (default 7) from the local Outlook client. Each event carries an entryId usable with maildesk_meeting_update / maildesk_meeting_cancel, plus an isMeeting flag. Read-only.',
     parameters: {
       type: 'object',
       additionalProperties: true,
@@ -563,7 +563,7 @@ export function apply(ctx) {
   })
 
   ctx.tools.register({
-    name: 'outlook_calendar_create',
+    name: 'maildesk_calendar_create',
     description: 'Create a calendar entry in Outlook. Personal entries (no attendees) are created directly. With attendees (required recipients or optionalRecipients) it becomes a meeting invite and uses TWO-CALL CONFIRMATION with EDITABLE popup: the first call returns needs-confirmation; the user may allow as-is, edit fields (subject/location/body), or reject. Supports recurring meetings via the recurrence object (daily/weekly/monthly).',
     parameters: {
       type: 'object',
@@ -623,8 +623,8 @@ export function apply(ctx) {
   })
 
   ctx.tools.register({
-    name: 'outlook_meeting_requests',
-    description: 'List meeting requests waiting for your response (invites others sent you, last 30 days), with organizer, proposed time and location. Read-only; respond with outlook_respond_meeting.',
+    name: 'maildesk_meeting_requests',
+    description: 'List meeting requests waiting for your response (invites others sent you, last 30 days), with organizer, proposed time and location. Read-only; respond with maildesk_respond_meeting.',
     parameters: { type: 'object', additionalProperties: true, properties: {} },
     output: {
       schema: { type: 'object', additionalProperties: true },
@@ -635,13 +635,13 @@ export function apply(ctx) {
   })
 
   ctx.tools.register({
-    name: 'outlook_respond_meeting',
-    description: 'Accept, tentatively accept, or decline a meeting request (entryId from outlook_meeting_requests). TWO-CALL CONFIRMATION: the first call returns needs-confirmation; retry with confirmed:true after the user allows. Accepting/declining sends a response to the organizer.',
+    name: 'maildesk_respond_meeting',
+    description: 'Accept, tentatively accept, or decline a meeting request (entryId from maildesk_meeting_requests). TWO-CALL CONFIRMATION: the first call returns needs-confirmation; retry with confirmed:true after the user allows. Accepting/declining sends a response to the organizer.',
     parameters: {
       type: 'object',
       additionalProperties: true,
       properties: {
-        entryId: { type: 'string', description: 'entryId of the meeting request (from outlook_meeting_requests).' },
+        entryId: { type: 'string', description: 'entryId of the meeting request (from maildesk_meeting_requests).' },
         response: { type: 'string', description: '"accept", "tentative", or "decline".' },
         confirmed: { type: 'boolean', description: 'Set true ONLY after the user approved via an in-session popup.' },
       },
@@ -657,7 +657,7 @@ export function apply(ctx) {
         confirmations.set('meeting-respond', h)
         const label = a.response === 'accept' ? 'accept' : a.response === 'tentative' ? 'tentative' : a.response === 'decline' ? 'decline' : String(a.response)
         return needsConfirmation('meeting-respond',
-          'Meeting response: ' + label + '\nRequest entryId: ' + a.entryId + '\n(the response goes to the organizer; call outlook_meeting_requests first for details)')
+          'Meeting response: ' + label + '\nRequest entryId: ' + a.entryId + '\n(the response goes to the organizer; call maildesk_meeting_requests first for details)')
       }
       return dispatchConfirmed('meeting-respond', 'respond_meeting', a, { confirmed: true })
     },
@@ -665,8 +665,8 @@ export function apply(ctx) {
   })
 
   ctx.tools.register({
-    name: 'outlook_meeting_update',
-    description: 'Update an existing appointment/meeting on the calendar (entryId from outlook_calendar_query — use the outlook entryId if available). Changed fields are applied; if the meeting has attendees, Outlook re-notifies them. TWO-CALL CONFIRMATION: first call returns needs-confirmation; retry with confirmed:true after the user allows. Applies to personal appointments too (uniform gate).',
+    name: 'maildesk_meeting_update',
+    description: 'Update an existing appointment/meeting on the calendar (entryId from maildesk_calendar_query — use the outlook entryId if available). Changed fields are applied; if the meeting has attendees, Outlook re-notifies them. TWO-CALL CONFIRMATION: first call returns needs-confirmation; retry with confirmed:true after the user allows. Applies to personal appointments too (uniform gate).',
     parameters: {
       type: 'object',
       additionalProperties: true,
@@ -706,7 +706,7 @@ export function apply(ctx) {
   })
 
   ctx.tools.register({
-    name: 'outlook_meeting_cancel',
+    name: 'maildesk_meeting_cancel',
     description: 'Cancel a meeting (notifies all attendees with a cancellation) or delete a personal appointment. TWO-CALL CONFIRMATION for both paths: the first call returns needs-confirmation; retry with confirmed:true after the user allows.',
     parameters: {
       type: 'object',
@@ -734,7 +734,7 @@ export function apply(ctx) {
   })
 
   ctx.tools.register({
-    name: 'outlook_search_people',
+    name: 'maildesk_search_people',
     description: 'Search the Outlook address book (GAL) by display name, SMTP address or alias. Returns matching people with name and smtp. Read-only.',
     parameters: {
       type: 'object',
@@ -754,13 +754,13 @@ export function apply(ctx) {
   })
 
   ctx.tools.register({
-    name: 'outlook_freebusy',
+    name: 'maildesk_freebusy',
     description: 'Query a colleague busy/free status from Outlook. Returns busy slots (status: tentative/busy/out-of-office) per day for the next N days starting today. Read-only.',
     parameters: {
       type: 'object',
       additionalProperties: true,
       properties: {
-        email: { type: 'string', description: 'SMTP address of the person (from outlook_search_people).' },
+        email: { type: 'string', description: 'SMTP address of the person (from maildesk_search_people).' },
         days: { type: 'number', description: 'How many days starting today. Default 3.' },
       },
       required: ['email'],
@@ -774,7 +774,7 @@ export function apply(ctx) {
   })
 
   ctx.tools.register({
-    name: 'outlook_search_rooms',
+    name: 'maildesk_search_rooms',
     description: 'Search Outlook meeting rooms by name and optionally check their availability for a time window (date + start/end time). Returns rooms with name, smtp, availability and conflicting slots. Read-only.',
     parameters: {
       type: 'object',
@@ -796,13 +796,13 @@ export function apply(ctx) {
   })
 
   ctx.tools.register({
-    name: 'outlook_reply_mail',
-    description: 'Reply to, reply-all to, or forward an existing email (entryId from outlook_search_mail). Auto-quotes the original message below your new text; forward carries the original attachments and needs a "to" recipient. TWO-CALL CONFIRMATION with EDITABLE popup: the first call returns needs-confirmation showing the original mail plus your reply; the user may allow as-is, edit (body/to), or reject. Only confirmed:true dispatches.',
+    name: 'maildesk_reply_mail',
+    description: 'Reply to, reply-all to, or forward an existing email (entryId from maildesk_search_mail). Auto-quotes the original message below your new text; forward carries the original attachments and needs a "to" recipient. TWO-CALL CONFIRMATION with EDITABLE popup: the first call returns needs-confirmation showing the original mail plus your reply; the user may allow as-is, edit (body/to), or reject. Only confirmed:true dispatches.',
     parameters: {
       type: 'object',
       additionalProperties: true,
       properties: {
-        entryId: { type: 'string', description: 'entryId of the mail to reply to / forward (from outlook_search_mail).' },
+        entryId: { type: 'string', description: 'entryId of the mail to reply to / forward (from maildesk_search_mail).' },
         mode: { type: 'string', description: '"reply" (sender only), "reply-all" (sender + all recipients), or "forward" (new recipient, keeps attachments).' },
         body: { type: 'string', description: 'New text to write above the auto-quoted original.' },
         to: { type: 'string', description: 'Forward recipient(s), semicolon-separated. Required for forward; ignored for reply/reply-all.' },
@@ -854,14 +854,14 @@ export function apply(ctx) {
   })
 
   ctx.tools.register({
-    name: 'outlook_save_attachment',
-    description: 'Save one attachment of an email to a local directory, by mail entryId and attachment display name (names come from outlook_read_mail). Returns the saved file path and size. Writes a local file only; nothing leaves the machine.',
+    name: 'maildesk_save_attachment',
+    description: 'Save one attachment of an email to a local directory, by mail entryId and attachment display name (names come from maildesk_read_mail). Returns the saved file path and size. Writes a local file only; nothing leaves the machine.',
     parameters: {
       type: 'object',
       additionalProperties: true,
       properties: {
-        entryId: { type: 'string', description: 'entryId of the mail holding the attachment (from outlook_search_mail).' },
-        name: { type: 'string', description: 'Attachment display name exactly as listed by outlook_read_mail.' },
+        entryId: { type: 'string', description: 'entryId of the mail holding the attachment (from maildesk_search_mail).' },
+        name: { type: 'string', description: 'Attachment display name exactly as listed by maildesk_read_mail.' },
         dir: { type: 'string', description: 'Target directory for the saved file (must exist).' },
       },
       required: ['entryId', 'name', 'dir'],
@@ -875,7 +875,7 @@ export function apply(ctx) {
   })
 
   ctx.tools.register({
-    name: 'outlook_check_new',
+    name: 'maildesk_check_new',
     description: 'Fetch new-mail arrivals pushed by the Outlook NewMailEx watcher since the last check, as a list (entryId, subject, sender, time). Fetching clears the pending queue and resets the sidebar badge. Returns unread totals too. Read-only. Tip: when presenting arrivals to the user, append a clickable open link per mail: [Open](http://127.0.0.1:3080/olk-notify/open?entryId=<entryId>).',
     parameters: {
       type: 'object',
@@ -895,7 +895,7 @@ export function apply(ctx) {
 
 
   ctx.tools.register({
-    name: 'outlook_list_folders',
+    name: 'maildesk_list_folders',
     description: 'List the Outlook folder tree for every mailbox store: name, path, entryId, depth, item and unread counts. Read-only. Use a returned entryId or path as the folder argument of the mail tools.',
     parameters: {
       type: 'object',
@@ -914,13 +914,13 @@ export function apply(ctx) {
   })
 
   ctx.tools.register({
-    name: 'outlook_list_mail',
-    description: 'List one page of a folder, newest first by default (read-only). Unlike outlook_search_mail this is not a search: it answers what is in this folder, with offset/limit paging and a total count. Use it to browse a mailbox.',
+    name: 'maildesk_list_mail',
+    description: 'List one page of a folder, newest first by default (read-only). Unlike maildesk_search_mail this is not a search: it answers what is in this folder, with offset/limit paging and a total count. Use it to browse a mailbox.',
     parameters: {
       type: 'object',
       additionalProperties: true,
       properties: {
-        folder: { type: 'string', description: 'Folder name, path ("Inbox/ProjectA"), or entryId from outlook_list_folders. Default Inbox.' },
+        folder: { type: 'string', description: 'Folder name, path ("Inbox/ProjectA"), or entryId from maildesk_list_folders. Default Inbox.' },
         offset: { type: 'number', description: 'Items to skip. Default 0.' },
         limit: { type: 'number', description: 'Max items. Default 50, max 200.' },
         sort: { type: 'string', enum: ['received', 'subject', 'sender'], description: 'Sort field. Default received.' },
@@ -938,7 +938,7 @@ export function apply(ctx) {
   })
 
   ctx.tools.register({
-    name: 'outlook_move_mail',
+    name: 'maildesk_move_mail',
     description: 'Move or archive emails to another folder: one entryId or an array of entryIds, plus a destination folder (name, path, or folder entryId). Returns the NEW entryIds, because moving changes them. Recoverable; nothing leaves the machine.',
     parameters: {
       type: 'object',
@@ -946,7 +946,7 @@ export function apply(ctx) {
       properties: {
         entryId: { type: 'string', description: 'Single mail entryId.' },
         entryIds: { type: 'array', items: { type: 'string' }, description: 'Several mail entryIds (max 500).' },
-        destFolder: { type: 'string', description: 'Destination folder: "Archive", "Inbox/ProjectA", or an entryId from outlook_list_folders.' },
+        destFolder: { type: 'string', description: 'Destination folder: "Archive", "Inbox/ProjectA", or an entryId from maildesk_list_folders.' },
       },
       required: ['destFolder'],
     },
@@ -959,7 +959,7 @@ export function apply(ctx) {
   })
 
   ctx.tools.register({
-    name: 'outlook_delete_mail',
+    name: 'maildesk_delete_mail',
     description: 'Delete emails by entryId or entryIds. SOFT delete only: items go to Deleted Items and the user can undo them in Outlook. Pass expected equal to the number of entryIds you are deleting; the bridge aborts on a mismatch, so a stale selection cannot delete more than the user saw. No permanent delete exists.',
     parameters: {
       type: 'object',
@@ -979,7 +979,7 @@ export function apply(ctx) {
   })
 
   ctx.tools.register({
-    name: 'outlook_mark_read',
+    name: 'maildesk_mark_read',
     description: 'Mark emails read or unread by entryId or entryIds. Local state only; nothing leaves the machine.',
     parameters: {
       type: 'object',
@@ -997,5 +997,5 @@ export function apply(ctx) {
     async execute(a) { return olk('mark_read', a) },
     presentCall: (a) => ({ card: 'generic', title: 'Mark Outlook mail read/unread', kind: 'other', rawInput: { entryIds: a.entryIds, read: a.read } }),
   })
-  console.info('[dsh-outlook] registered 23 Outlook COM tools')
+  console.info('[dsh-arya-maildesk] registered 23 Outlook COM tools')
 }

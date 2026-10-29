@@ -1,4 +1,4 @@
-﻿﻿# dsh-outlook Outlook COM bridge dispatcher.
+﻿﻿# dsh-arya-maildesk Outlook COM bridge dispatcher.
 # Invoked as: powershell -NoProfile -Command "Invoke-Expression (Get-Content -Raw <this file>)"
 # Input:  $env:OLK_ACTION = action name; arguments as ONE JSON OBJECT on STDIN
 #         (stdin transport — Windows env vars cap near 32 KB and a large mail

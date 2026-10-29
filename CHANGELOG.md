@@ -2,6 +2,18 @@
 
 This project's version narrative puts **why** before **what**. Every entry starts with the motivation.
 
+## 2.13.0 — Named dsh-arya-maildesk, and the plugin gets a face
+
+**Why**: two reasons, one of them embarrassing.
+
+`dsh-outlook` is taken on npm, and every tool carried an `outlook_*` prefix, so installing this release beside the upstream one put two plugins on the same 23 tool names and let whichever registered second win silently. A fork that cannot be installed next to its parent, and cannot be addressed by a distinct name, is not a fork yet.
+
+The second reason is the point of the fork. Every complaint the agent produced — no delete, no move, a reply that only exists inside Outlook, having to ask twice for the same thing — has the same shape: the plugin could *read* a mailbox and nothing else, so the human did the organizing in another application. No tool surface fixes that. It takes a panel: folders, a list you can select in, a reading pane, and a composer that keeps the draft in the harness instead of stacking another item in Outlook's Drafts folder.
+
+**What changed**:
+- Identity: package and plugin `dsh-arya-maildesk`; all 23 tools `maildesk_*`; slot registrations, the storage id and the style element carry the new name; the watcher log is `%TEMP%\dsh-arya-maildesk-watch-debug.log`. Upstream keeps its own name inside `NOTICE`, `UPSTREAM.md` and `LICENSE` — that is provenance, not identity.
+- `repository`, `bugs` and `homepage` dropped from `package.json` until this fork has its own remote: they pointed at upstream, which would send bug reports to people who did not write this code.
+
 ## 2.12.0 — Mail management, and the plugin speaks English (first fork increment)
 
 *(This repository is a fork of `dsh-outlook`, base `5a2ec7d` / v2.11.0 — see `NOTICE` and `UPSTREAM.md`.)*
@@ -17,7 +29,7 @@ And the plugin talked to its user in Chinese: the badge, the popover, the toasts
 - New `Resolve-Folder`: a folder may be a path (`Inbox/Project/2026`, `/` and `\` both accepted), an English well-known name (Inbox / Sent Items / Drafts / Deleted Items), or an entryId. **CJK aliases were deliberately dropped everywhere** — folder names, the GAL match, the room-list match — so the source stays pure ASCII and no non-UTF-8 transport can quietly turn a literal into one that never matches. Consequence: a mailbox whose folders are named in another language must be addressed by entryId. `search_mail` still carries its own inline copy of the old resolver; folding it into `Resolve-Folder` is a `TODO(fork)` once the new actions have run against a real Outlook.
 - Batch cap of 500 per call, each item in its own try/catch, failures collected into `failed[]` instead of failing the batch — dragging 40 mails must not die because the 17th is a meeting invite.
 - `delete_mail` carries an `expected` count gate: the caller must state "I believe there are N here", and a mismatch **refuses outright** and asks for a re-read, instead of deleting a selection it never saw clearly. Deletion stays soft; nothing in the plugin purges Deleted Items.
-- Host: 5 new tools — `outlook_list_folders`, `outlook_list_mail`, `outlook_move_mail`, `outlook_delete_mail`, `outlook_mark_read` (23 in total).
+- Host: 5 new tools — `maildesk_list_folders`, `maildesk_list_mail`, `maildesk_move_mail`, `maildesk_delete_mail`, `maildesk_mark_read` (23 in total).
 - **No new confirmation gate, on purpose.** The two-call confirmation, the content hash and the `OLK_CONFIRM` token exist for actions whose output *leaves the machine* (`send_draft`/`reply_mail`/`calendar_create` with attendees/`respond_meeting`/`meeting_update`/`meeting_cancel`). Deleting to Deleted Items and moving between folders do not leave it, and a gate there would only teach the user to approve without reading. The real hazard is covered by the count gate instead.
 - Full English sweep: every user-facing string in `index.js` (confirmation previews, tool descriptions, the chat link labels) and every string in `client.js` (badge, aria labels, popover, toasts) is now English; the CJK folder/GAL/room aliases are gone from `lib/olk.ps1`; `README.md`, `TESTCASES.md` and this file are rewritten in English. The two `assets/*.png` badge screenshots still show the old Chinese tooltip and need a re-shoot.
 
@@ -43,7 +55,7 @@ And the plugin talked to its user in Chinese: the badge, the popover, the toasts
 - Watcher diagnostics moved from the plugin install directory (which may be read-only for a global install) to `%TEMP%\dsh-outlook-watch-debug.log`.
 - The bridge prechecks `HKCR` before creating any COM object: with no classic Outlook installed (or only the UWP "New Outlook") it returns an actionable message instead of an opaque ActiveX error.
 - Bridge and watcher are invoked via `Get-Content -Raw -Encoding UTF8`, so they no longer depend on a file BOM (the "an editor strips the BOM" trap has now reproduced twice).
-- README refreshed to the actual 18 tools / 43 cases, the four meeting tools and `outlook_open_mail` documented, and the known-boundaries section updated (port assumptions, the `OLK_WATCH` switch, log location).
+- README refreshed to the actual 18 tools / 43 cases, the four meeting tools and `maildesk_open_mail` documented, and the known-boundaries section updated (port assumptions, the `OLK_WATCH` switch, log location).
 - `meeting_update`/`meeting_cancel` descriptions aligned with what the code does (uniform two-call confirmation).
 
 ## 2.10.0 — Click a mail in the conversation to open it, and a bridge encoding hazard fixed
@@ -53,7 +65,7 @@ And the plugin talked to its user in Chinese: the badge, the popover, the toasts
 **What changed**:
 - Bridge action `open_mail`: `GetItemFromID().Display()` opens the mail in a desktop Outlook inspector and explicitly sets `UnRead=$false` (opening counts as reading; `wasUnread` is returned). Purely local, never leaves the machine, no confirmation gate.
 - Host route `/olk-notify/open`: GET (`?entryId=`, returning a minimal HTML result page the chat markdown link could navigate to) plus POST (JSON, for the sidebar popover). Both keep the same-origin guard (a browser navigation sends no Origin header, so it is trusted at the same level as the existing routes) and an entryId allowlist regex (`[A-Za-z0-9+/=_-]{20,512}`). On success the host drops that entryId from `notify.pending` and decrements `unread`, so the badge follows.
-- New tool `outlook_open_mail` (18 in total); the `outlook_search_mail`/`outlook_check_new` descriptions gained a hint to attach a clickable open link to each mail.
+- New tool `maildesk_open_mail` (18 in total); the `maildesk_search_mail`/`maildesk_check_new` descriptions gained a hint to attach a clickable open link to each mail.
 - Every mail in the sidebar popover became a clickable button: POST to the open route, removed from the list on success (badge decrements immediately, not at the next 20s poll), beacon on failure.
 - `olk.ps1`/`watch.ps1` got a UTF-8 BOM, killing the PS 5.1 ANSI misread at the root.
 

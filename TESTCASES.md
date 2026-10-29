@@ -1,6 +1,6 @@
-# dsh-outlook sidebar badge — test case set
+# dsh-arya-maildesk sidebar badge — test case set
 
-Chain under test: **NewMailEx watcher → index.js state route → client 20s poll → badge render → popover → `outlook_check_new` clears the queue**.
+Chain under test: **NewMailEx watcher → index.js state route → client 20s poll → badge render → popover → `maildesk_check_new` clears the queue**.
 
 Labels: `[auto]` can be checked with a script or tool; `[manual]` needs eyes on the browser; `[regression]` corresponds to a defect that really happened.
 
@@ -16,7 +16,7 @@ Labels: `[auto]` can be checked with a script or tool; `[manual]` needs eyes on 
 | A4 | Watcher self-heals | `taskkill` the watcher's powershell process | The debug log records the exit, a respawn happens within 30s, `hello` comes back, and the state route keeps answering meanwhile (with the stale unread value) | [auto] |
 | A5 | Outlook not running | Quit Outlook, restart DSH | The watcher waits without crashing; once Outlook starts, `hello` arrives with the correct unread count | [manual] |
 | A6 | Pending cap | Simulate more than 50 unconsumed arrivals | The queue keeps the newest 50 (`shift()` drops the oldest) and the count reads 50 | [auto] |
-| A7 | `check_new` clears | With a non-empty queue, call `outlook_check_new` | Returns every pending entry with a matching `count`; a second call returns `count:0`; the badge disappears on the next poll | [auto] |
+| A7 | `check_new` clears | With a non-empty queue, call `maildesk_check_new` | Returns every pending entry with a matching `count`; a second call returns `count:0`; the badge disappears on the next poll | [auto] |
 | A8 | Watcher off switch | Set `OLK_WATCH=0`, restart DSH | The watcher does not start, `state` returns `pendingCount:0` and `unread:null`, every other tool still works | [manual] |
 
 ## B. Badge rendering (client.js NewMailRow)
@@ -41,7 +41,7 @@ Labels: `[auto]` can be checked with a script or tool; `[manual]` needs eyes on 
 | C2 | Close by outside click | Click anywhere outside | The popover is removed at once and the document listener is unbound | [manual] |
 | C3 | Close by toggle | Click the button again | The popover closes (the button click does not also trigger C2) | [manual] |
 | C4 | Empty list | Click with pending=0 | Shows "New mail (0)" and the hint "Click a mail to open it in Outlook; ask "anything new?" in chat to read and clear the queue" | [manual] |
-| C5 | Unload cleanup | Disable the plugin or reload the page | Popover, button and the `dsh-outlook-styles` tag are all gone, with no DOM left behind | [manual] |
+| C5 | Unload cleanup | Disable the plugin or reload the page | Popover, button and the `dsh-arya-maildesk-styles` tag are all gone, with no DOM left behind | [manual] |
 
 ## D. Coexistence and style regressions (slot rewrite, v2.6.0)
 
@@ -74,7 +74,7 @@ Labels: `[auto]` can be checked with a script or tool; `[manual]` needs eyes on 
 | # | Case | Steps | Expected | Type |
 |---|---|---|---|---|
 | G1 | Bridge `open_mail` | Get an entryId from `search_mail`, run the bridge with `OLK_ACTION=open_mail` | A desktop Outlook inspector opens and the bridge returns `opened:true` with subject/sender (verified live) | [auto] |
-| G2 | Tool | Call `outlook_open_mail` | Same as G1; purely local, no confirmation gate | [auto] |
+| G2 | Tool | Call `maildesk_open_mail` | Same as G1; purely local, no confirmation gate | [auto] |
 | G3 | POST-only route | GET `/olk-notify/open?entryId=<valid id>` (simulating modifier-click navigation) | 405, the bridge is not touched (v2.11.0 removed the GET fallback; deliberate) | [auto] |
 | G4 | Popover click | Click a mail inside the sidebar popover | POST succeeds, the entry leaves the list immediately and the badge decrements at once; the desktop opens the mail | [manual] |
 | G5 | entryId allowlist | POST `{"entryId":"<script>"}` to `/olk-notify/open` | 400 / `{"ok":false,"error":"invalid entryId"}`, bridge untouched | [auto] |
@@ -106,5 +106,5 @@ $v = '<cookie>'; (Invoke-RestMethod -Headers @{Cookie=$v} 'http://127.0.0.1:3080
 # Watcher liveness
 (Get-Process powershell | Measure-Object).Count -ge 2  # bridge + watcher can coexist
 
-# Trigger a real new mail: call outlook_send_mail in a session (needs user confirmation), then run the A1 assertion
+# Trigger a real new mail: call maildesk_send_mail in a session (needs user confirmation), then run the A1 assertion
 ```

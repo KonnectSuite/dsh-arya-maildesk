@@ -1,4 +1,4 @@
-﻿# dsh-outlook NewMailEx watcher (persistent process).
+﻿# dsh-arya-maildesk NewMailEx watcher (persistent process).
 # Spawned by index.js; prints one JSON object per line to STDOUT:
 #   { "type": "hello",  "unread": N }              on startup
 #   { "type": "newmail", entryId, subject, sender, received }  per new mail

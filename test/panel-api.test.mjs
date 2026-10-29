@@ -16,8 +16,9 @@ process.env.OLK_WATCH = '0'
 const plugin = await import('../index.js')
 
 const routes = new Map()
+const toolSpecs = new Map()
 const ctx = {
-  tools: { register() { /* tool registration is covered elsewhere */ } },
+  tools: { register(spec) { toolSpecs.set(spec.name, spec) } },
   effect(fn) { const dispose = fn(); return typeof dispose === 'function' ? dispose : () => {} },
   inject(names, callback) {
     if (names.includes('webServer')) {
@@ -349,6 +350,44 @@ await check('the compose routes refuse a cross-origin caller', async () => {
     await handler(req, res)
     assert.equal(res.statusCode, 403, path + ' must refuse a foreign origin')
   }
+})
+
+// M5: the draft card. The chat renders a keyed tool.call.toolview entry for
+// maildesk_compose, so the tool has to hand back a draft the card can poll.
+const compose = toolSpecs.get('maildesk_compose')
+assert.ok(compose !== undefined, 'maildesk_compose is registered')
+let cardDraftId = ''
+
+await check('maildesk_compose opens a reply draft the card can poll', async () => {
+  const inbox = await post('list_mail', { folder: 'Inbox', limit: 1 })
+  const entryId = inbox.result.mails[0].entryId
+  const out = await compose.execute({ mode: 'reply', entryId, body: 'First line.\n\nSecond paragraph.' })
+  assert.equal(out.status, 'ok')
+  assert.equal(out.mode, 'reply')
+  assert.equal(out.reused, false)
+  assert.match(out.draftId, /^draft-/)
+  assert.match(out.subject, /^Re: /)
+  assert.match(out.bodyHtml, /<p>First line\.<\/p><p>Second paragraph\.<\/p>/)
+  cardDraftId = out.draftId
+  const got = await hit('/maildesk/api/draft', { op: 'get', draftId: cardDraftId })
+  assert.equal(got.ok, true)
+  assert.equal(got.draft.id, cardDraftId)
+  assert.equal(got.draft.subject, out.subject)
+})
+
+await check('a second call on the same thread returns the same draft', async () => {
+  const inbox = await post('list_mail', { folder: 'Inbox', limit: 1 })
+  const entryId = inbox.result.mails[0].entryId
+  const again = await compose.execute({ mode: 'reply', entryId })
+  assert.equal(again.draftId, cardDraftId)
+  assert.equal(again.reused, true)
+  const draftsNow = await hit('/maildesk/api/draft', { op: 'list' })
+  assert.equal(draftsNow.drafts.length, 1, 'one thread must hold exactly one draft')
+})
+
+await check('op get 404s for a draft that does not exist', async () => {
+  const gone = await hit('/maildesk/api/draft', { op: 'get', draftId: 'draft-nope' })
+  assert.equal(gone.status, 404)
 })
 
 console.log((passed) + ' assertions passed' + (process.exitCode ? ' — with failures' : ''))

@@ -132,6 +132,10 @@ function olkOne(action, args = {}, opts = {}) {
 
 /** Queued bridge entry point (see olkChain above). */
 function olk(action, args = {}, opts = {}) {
+  // The fixture is the whole mailbox when MAILDESK_FIXTURE=1: the agent's
+  // tools have to land on the same data the panel shows, or a host without
+  // Outlook can render a mailbox but not answer a single mail question.
+  if (fixture !== null) return Promise.resolve(fixtureCall(action, args))
   const run = () => olkOne(action, args, opts)
   const next = olkChain.tail.then(run, run)
   olkChain.tail = next.catch(() => { /* keep the queue alive after failures */ })
@@ -579,6 +583,9 @@ export function apply(ctx) {
 
   // NewMailEx push watcher + badge state route (opt out with OLK_WATCH=0).
   startWatcher(ctx)
+  // The draft store lives inside the route injection, but the compose tool is
+  // registered outside it: hand the API across once the routes are mounted.
+  let composeApi = null
   ctx.inject(['webServer'], (webCtx) => {
     // Same-origin guard for the two badge routes (M3): mail metadata must
     // not be readable by random pages probing localhost. Non-browser
@@ -914,6 +921,12 @@ export function apply(ctx) {
       const op = String(payload.op || '')
       try {
         if (op === 'open') { res.end(JSON.stringify({ ok: true, ...(await openDraft(payload)) })); return }
+        if (op === 'get') {
+          const d = findDraft(String(payload.draftId || ''))
+          if (d === null) { res.statusCode = 404; res.end(JSON.stringify({ ok: false, error: 'unknown draft: ' + payload.draftId })); return }
+          res.end(JSON.stringify({ ok: true, draft: publicDraft(d) }))
+          return
+        }
         if (op === 'save') {
           const d = findDraft(String(payload.draftId || ''))
           if (d === null) { res.statusCode = 404; res.end(JSON.stringify({ ok: false, error: 'unknown draft: ' + payload.draftId })); return }
@@ -954,6 +967,7 @@ export function apply(ctx) {
     }
     ctx.effect(() => webCtx.webServer.register({ kind: 'exact', path: '/maildesk/api/draft', handler: draftRoute }), 'dsh-arya-maildesk: draft route')
     ctx.effect(() => webCtx.webServer.register({ kind: 'exact', path: '/maildesk/api/send', handler: sendRoute }), 'dsh-arya-maildesk: send route')
+    composeApi = { drafts, draftKeyOf, findDraft, publicDraft, openDraft, patchDraft, parseAddrList, formatAddrList, sendArgs }
   })
 
   ctx.tools.register({
@@ -1558,5 +1572,76 @@ export function apply(ctx) {
     async execute(a) { return olk('mark_read', a) },
     presentCall: (a) => ({ card: 'generic', title: 'Mark Outlook mail read/unread', kind: 'other', rawInput: { entryIds: a.entryIds, read: a.read } }),
   })
-  console.info('[dsh-arya-maildesk] registered 23 Outlook COM tools')
+  ctx.tools.register({
+    name: 'maildesk_compose',
+    description:
+      'Open or reopen a mail draft that belongs to this session instead of to Outlook, and show it as a draft card in the chat. '
+      + 'Use it for every reply, forward or new message: the user sees the recipients, subject and body, can send it from the card, '
+      + 'and re-opening the same thread returns the SAME draft instead of piling up a new one in Outlook\'s Drafts folder. '
+      + 'Nothing is sent and nothing is written to Outlook by this call. Sending happens only when the human presses Send in the panel or the card.',
+    parameters: {
+      type: 'object',
+      additionalProperties: true,
+      properties: {
+        mode: { type: 'string', enum: ['new', 'reply', 'replyAll', 'forward'], description: 'Draft kind. Default new.' },
+        entryId: { type: 'string', description: 'The mail being answered (reply/replyAll/forward). Recipients and the quote are filled from it.' },
+        draftId: { type: 'string', description: 'Reopen this exact draft instead of deriving one from mode+entryId.' },
+        to: { type: 'string', description: 'Recipients as a ; separated list of "Name <addr>" or bare addresses. Omit to keep what the reply derived.' },
+        cc: { type: 'string', description: 'Cc as a ; separated list.' },
+        bcc: { type: 'string', description: 'Bcc as a ; separated list.' },
+        subject: { type: 'string', description: 'Subject line. Omit to keep the derived "Re: …".' },
+        body: { type: 'string', description: 'Plain-text body. Blank lines become paragraphs.' },
+      },
+    },
+    output: {
+      schema: { type: 'object', additionalProperties: true },
+      render: (_a, v) => [{ type: 'text', text: JSON.stringify(v) }],
+    },
+    async execute(a) {
+      if (composeApi === null) return { status: 'error', error: 'the draft store is not mounted yet' }
+      const api = composeApi
+      let draft = null
+      let reused = false
+      if (a.draftId) {
+        draft = api.findDraft(String(a.draftId))
+        if (draft === null) return { status: 'error', error: 'unknown draft: ' + a.draftId }
+        reused = true
+      } else {
+        const opened = await api.openDraft({ mode: a.mode, inReplyTo: a.entryId })
+        draft = api.findDraft(opened.draft.id)
+        reused = opened.reused
+      }
+      const patch = {}
+      if (a.to !== undefined) patch.to = api.parseAddrList(a.to)
+      if (a.cc !== undefined) patch.cc = api.parseAddrList(a.cc)
+      if (a.bcc !== undefined) patch.bcc = api.parseAddrList(a.bcc)
+      if (a.subject !== undefined) patch.subject = String(a.subject)
+      if (a.body !== undefined) {
+        // Plain text in, minimal HTML out: the panel and Outlook both render
+        // HTML, and a draft that silently degrades to one paragraph reads as a
+        // different message than the one the user approved.
+        const html = escapeHtml(String(a.body))
+          .split(/\n{2,}/)
+          .map((p) => '<p>' + p.replace(/\n/g, '<br>') + '</p>')
+          .join('')
+        patch.bodyHtml = html
+      }
+      if (Object.keys(patch).length > 0) api.patchDraft(draft, patch)
+      const shown = api.publicDraft(draft)
+      return {
+        status: 'ok',
+        draftId: shown.id,
+        mode: shown.mode,
+        reused,
+        to: api.formatAddrList(shown.to),
+        cc: api.formatAddrList(shown.cc),
+        subject: shown.subject,
+        bodyHtml: shown.bodyHtml,
+        hasQuote: shown.quoteHtml !== '',
+        instruction: 'The draft is now on screen. The user can edit it in the mail panel, or send it — sending asks for an explicit confirmation first.',
+      }
+    },
+    presentCall: (a) => ({ card: 'generic', title: 'Compose mail', kind: 'other', rawInput: { mode: a.mode || 'new', entryId: a.entryId, subject: a.subject } }),
+  })
+  console.info('[dsh-arya-maildesk] registered 24 Outlook COM tools')
 }

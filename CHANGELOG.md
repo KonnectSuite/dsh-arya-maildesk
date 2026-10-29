@@ -2,6 +2,19 @@
 
 This project's version narrative puts **why** before **what**. Every entry starts with the motivation.
 
+## 2.16.0 — The draft lives in the conversation
+
+**Why**: the draft was reachable only by leaving the chat. You asked the agent for a reply, it answered "draft created", and the thing itself was in another panel — so the conversation about a mail and the mail you were writing could not be on screen together. A tool row saying `{"status":"ok","draftId":"draft-…"}` is not a draft; it is a receipt for one.
+
+**What changed**:
+- `maildesk_compose` is a tool of its own (mode, entryId or draftId, to/cc/bcc, subject, body) and the twenty-fourth in the pack. It opens or reuses the host-owned draft and returns what the card needs: mode, addressing, body HTML, whether a quote is attached.
+- The card in chat is a keyed `tool.call.toolview` entry for that tool name, not a chat-node kind. A chat node is keyed by the conversation model's own kind, so a plugin cannot add one without changing host data, and occupying `tool-call` would replace every tool row in the product. Registering the tool's own name renders our call and nothing else.
+- `POST /maildesk/api/draft` gained `op: "get"`, and the card polls it: this harness has no verified host-to-page push channel, so the card settles on whatever the panel last stored instead of pretending to be live.
+- `[Edit in panel]` calls `ctx.layout.selectPanel('mail')` and hands the draft id across a module-level bus — with the id parked in `pendingMailDraft` first, because the panel is unmounted while the chat is showing and a bare emit was silently dropped. The panel drains it on mount.
+- `htmlToText` reverses `textToHtml` when a draft is reopened, so the composer shows the stored body instead of an empty box; without it the next save would have written the emptiness back.
+- **Fixed**: the agent's tools bypassed the fixture. `maildesk_list_mail` went straight to the bridge and reported "classic desktop Outlook not found" on a machine where the panel was serving fixture mail happily. The fixture check now sits in `olk()` itself, so tools and panel answer from the same mailbox.
+- `test/panel-api.test.mjs` is 29 assertions: the tool is registered, a reply draft's body is `<p>…</p>` paragraphs, a second call on the same thread returns the same id, and `op: "get"` 404s for an unknown draft.
+
 ## 2.15.0 — Replies that belong to the harness, not to Outlook
 
 **Why**: the agent could draft, and the drafts were the problem. Every attempt left another item in Outlook's Drafts folder, so a thread asked about three times came back as three drafts, and the only way to see any of them was to leave the IDE and open Outlook. Contact lookup was poor enough that replying to the original mail was the reliable way to inherit its recipients. And a reply could not be written where the conversation about it was happening.

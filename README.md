@@ -3,7 +3,7 @@
 > **Let an AI drive the Outlook you are already logged into, on a work laptop where IT will not give you a Graph API permission.**
 > No credentials, no admin rights, and nothing leaves the machine without asking you first.
 
-[![DSH Plugin](https://img.shields.io/badge/DSH-Plugin-blue)](https://www.npmjs.com/package/@deepseek-ai/dsh) [![Platform](https://img.shields.io/badge/Platform-Windows%20%2B%20classic%20Outlook-0078D4)](https://support.microsoft.com/en-us/office) [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](./LICENSE) [![Tools](https://img.shields.io/badge/tools-23-8A2BE2)](#what-it-delivers)
+[![DSH Plugin](https://img.shields.io/badge/DSH-Plugin-blue)](https://www.npmjs.com/package/@deepseek-ai/dsh) [![Platform](https://img.shields.io/badge/Platform-Windows%20%2B%20classic%20Outlook-0078D4)](https://support.microsoft.com/en-us/office) [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](./LICENSE) [![Tools](https://img.shields.io/badge/tools-24-8A2BE2)](#what-it-delivers)
 
 > **This is a fork.** Upstream is [UnknowCao/dsh-outlook](https://github.com/UnknowCao/dsh-outlook) at `5a2ec7d` (v2.11.0), MIT, and it is published as `dsh-arya-maildesk` so it can be installed next to the upstream release: different package name, different tool prefix. This fork adds delete, move/archive, read-state and a paged folder listing — the "read" half of the plugin was complete, the "organize" half was missing. `NOTICE` records what came from upstream; `UPSTREAM.md` records how to diff against it.
 
@@ -17,7 +17,7 @@
 
 ## What it delivers
 
-**23 AI tools** — reads run on their own, anything that leaves the machine goes through a confirmation popup first:
+**24 AI tools** — reads run on their own, anything that leaves the machine goes through a confirmation popup first:
 
 | Tool | What it does | Gate |
 |---|---|---|
@@ -82,6 +82,14 @@ Sending is two steps on purpose. **Send…** asks the host for a confirmation ha
 
 The body is sent as `HTMLBody`, and the quote is rebuilt through a stricter path than the reading pane's: script, style, frames, forms and `on*=` handlers are removed **with their contents** before they are copied into an outbound message.
 
+### The draft in the conversation
+
+![The draft card in chat: mode, addressing, body and the three actions](docs/draft-card.png)
+
+Asking the agent to draft a reply puts a card in the conversation instead of a line of JSON: the mode, the subject, the addressing, the body, and `[Edit in panel] [Send…] [Discard]`. The card is a keyed `tool.call.toolview` entry for the `maildesk_compose` tool, so it renders only that call and leaves every other tool row alone.
+
+The card is a view of the same host-owned draft the panel edits, not a copy. There is no push channel from the host to the page in this harness, so the card polls `POST /maildesk/api/draft` with `op: "get"` and settles on whatever the panel last stored — editing in the panel and returning to the chat shows the edit. `Send…` uses the same two-step hash gate; `Edit in panel` switches to the Mail panel and opens the composer on that very draft, so there is still only one draft per thread no matter which surface started it.
+
 ## Quick start
 
 ```sh
@@ -128,7 +136,7 @@ Known boundaries: the `/olk-notify/*` routes are reachable only from this host a
 ## Layout
 
 ```
-index.js          host half: 23 tool registrations, two-call confirmation, content hash,
+index.js          host half: 24 tool registrations, two-call confirmation, content hash,
                   watcher management, state/open routes
 client.js         browser half: sidebar.footer.action slot button, badge, popover
                   (React Portal, click-to-open)

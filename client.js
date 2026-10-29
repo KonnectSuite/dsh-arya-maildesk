@@ -89,6 +89,20 @@ window.__ModuleLoader__.load({
       const blocks = String(text || '').split(/\n{2,}/)
       return blocks.map((b) => '<p>' + b.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/\n/g, '<br>') + '</p>').join('')
     }
+    /** The inverse, for reopening a draft the host already holds: without it a
+     *  reopened draft would look empty and the next save would erase the body. */
+    function htmlToText(html) {
+      return String(html || '')
+        .replace(/<br\s*\/?>/gi, '\n')
+        .replace(/<\/(p|div|li|tr|h[1-6]|blockquote)>/gi, '\n\n')
+        .replace(/<[^>]*>/g, '')
+        .replace(/&nbsp;/g, ' ')
+        .replace(/&lt;/g, '<')
+        .replace(/&gt;/g, '>')
+        .replace(/&amp;/g, '&')
+        .replace(/\n{3,}/g, '\n\n')
+        .trim()
+    }
 
     function ensureStyles() {
       if (document.head === null) return null
@@ -129,6 +143,24 @@ window.__ModuleLoader__.load({
         '.md-confirm-row{display:flex;gap:8px;font-size:12.5px;padding:3px 0;border-bottom:1px dashed var(--dsw-alias-border-subtle,#eee)}',
         '.md-confirm-row b{flex:none;width:64px;opacity:.65;font-weight:600}',
         '.md-confirm-body{margin:10px 0 0;padding:10px;border-radius:8px;background:var(--dsw-alias-bg-subtle,#f7f7f7);white-space:pre-wrap;font-size:12.5px;max-height:220px;overflow:auto}',
+
+        /* --- the draft card in chat --- */
+        '.md-card{border:1px solid var(--dsw-alias-border-subtle,#e3e3e3);border-radius:10px;background:var(--dsh-bg-elevated,#fff);padding:10px 12px;margin:2px 0;max-width:640px;font:13px/1.45 system-ui,-apple-system,"Segoe UI",sans-serif}',
+        '.md-card-head{display:flex;align-items:center;gap:8px;min-width:0}',
+        '.md-card-badge{font-size:10.5px;text-transform:uppercase;letter-spacing:.4px;padding:2px 7px;border-radius:999px;background:#2f6fed14;color:#2f6fed;white-space:nowrap;flex:none}',
+        '.md-card-title{font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}',
+        '.md-card-row{display:flex;gap:6px;margin-top:5px;font-size:12px;color:var(--dsw-alias-label-secondary,#5a6472)}',
+        '.md-card-label{flex:none;min-width:16px;color:var(--dsw-alias-label-tertiary,#8a93a0)}',
+        '.md-card-value{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}',
+        '.md-card-body{margin-top:7px;color:var(--dsw-alias-label-primary,#1b1b1b);white-space:pre-wrap;max-height:140px;overflow:auto}',
+        '.md-card-pending{color:var(--dsw-alias-label-secondary,#5a6472)}',
+        '.md-card-done{opacity:.85}',
+        '.md-card-error{margin-top:7px;color:#c0392b;font-size:12px}',
+        '.md-card-confirm{margin-top:8px;padding:9px 10px;border-radius:8px;background:var(--dsw-alias-bg-subtle,#f7f7f7)}',
+        '.md-card-confirm-head{font-weight:600;margin-bottom:5px}',
+        '.md-card-confirm-row{font-size:12px;margin-top:3px}',
+        '.md-card-confirm-note{margin-top:7px;font-size:11.5px;color:var(--dsw-alias-label-tertiary,#8a93a0)}',
+        '.md-card-actions{display:flex;gap:8px;margin-top:10px;flex-wrap:wrap}',
 
         /* --- main panel --- */
         '.md{position:relative;display:flex;flex-direction:column;height:100%;min-height:0;font:13px/1.45 system-ui,-apple-system,"Segoe UI",sans-serif;color:var(--dsw-alias-label-primary,#1b1b1b);background:var(--dsh-bg,#fff)}',
@@ -522,6 +554,18 @@ window.__ModuleLoader__.load({
       const anchor = React.useRef(null)
       const rowsRef = React.useRef(null)
 
+      // The chat draft card can ask this panel to open its draft. The request
+      // may have arrived while the panel was unmounted, so drain it on mount.
+      React.useEffect(() => {
+        const unsubscribe = draftBus.subscribe((id) => { void openComposeById(id) })
+        if (pendingMailDraft !== null) {
+          const id = pendingMailDraft
+          pendingMailDraft = null
+          void openComposeById(id)
+        }
+        return unsubscribe
+      }, [])
+
       const announce = (text, isError) => {
         setToast({ text, isError: isError === true })
         setTimeout(() => setToast(null), 2800)
@@ -764,6 +808,33 @@ window.__ModuleLoader__.load({
       const DRAFT_URL = '/maildesk/api/draft'
       const SEND_URL = '/maildesk/api/send'
 
+      /** Open a draft the host already holds — the same draft the chat card
+       *  shows, so editing here and there is one object, not two. */
+      async function openComposeById(draftId) {
+        setCompose({ status: 'loading' })
+        const res = await api(DRAFT_URL, { op: 'get', draftId })
+        if (res.ok !== true) {
+          setCompose({ status: 'error', error: res.error || 'that draft is no longer open' })
+          return
+        }
+        const d = res.draft
+        setCompose({
+          status: 'edit',
+          draft: d,
+          reused: true,
+          toText: formatPeople(d.to),
+          ccText: formatPeople(d.cc),
+          bccText: formatPeople(d.bcc),
+          subject: d.subject || '',
+          bodyText: htmlToText(d.bodyHtml),
+          showCc: (d.cc || []).length > 0,
+          showBcc: (d.bcc || []).length > 0,
+          busy: '',
+          error: '',
+          confirm: null,
+        })
+      }
+
       const openCompose = async (mode) => {
         const ids = targetIds()
         const inReplyTo = ids.length === 1 ? ids[0] : null
@@ -783,7 +854,7 @@ window.__ModuleLoader__.load({
           ccText: formatPeople(d.cc),
           bccText: formatPeople(d.bcc),
           subject: d.subject || '',
-          bodyText: '',
+          bodyText: htmlToText(d.bodyHtml),
           showCc: (d.cc || []).length > 0,
           showBcc: false,
           busy: '',
@@ -1142,9 +1213,164 @@ window.__ModuleLoader__.load({
       void openMailByEntryId(entryId)
     }
 
+    /* ---- the draft card in chat --------------------------------------- */
+    // The panel and the chat card are two views of one host-owned draft (see
+    // the compose routes in index.js), so the only thing they must share is
+    // "open this draft". A module-level bus keeps that out of the React trees
+    // the harness owns.
+    const draftBus = {
+      listeners: new Set(),
+      subscribe(fn) { this.listeners.add(fn); return () => { this.listeners.delete(fn) } },
+      emit(draftId) { for (const fn of this.listeners) fn(draftId) },
+    }
+    /** Set by apply once ctx.layout is live: navigates the frame to the mail
+     *  panel and asks it to open one draft. */
+    let focusMailDraft = null
+    /** The panel is not mounted while the chat is showing, so an "open this
+     *  draft" request that arrives first has to survive until it mounts. */
+    let pendingMailDraft = null
+
+    function snippetOf(html, max) {
+      const text = String(html || '').replace(/<[^>]*>/g, ' ').replace(/&nbsp;/g, ' ')
+        .replace(/&amp;/g, '&').replace(/\s+/g, ' ').trim()
+      return text.length > max ? text.slice(0, max - 1) + '…' : text
+    }
+
+    /** The tool half answers with a JSON text block, so the card reads the
+     *  draftId back out of the result content. */
+    function draftIdOf(block) {
+      if (block === null || block === undefined) return ''
+      const content = Array.isArray(block.content) ? block.content : []
+      const text = content.filter((c) => c !== null && c !== undefined && c.type === 'text')
+        .map((c) => String(c.text || '')).join('')
+      if (text === '') return ''
+      try {
+        const parsed = JSON.parse(text)
+        if (parsed !== null && typeof parsed === 'object' && typeof parsed.draftId === 'string') return parsed.draftId
+      } catch { /* not a JSON block, fall back to the regex */ }
+      const match = /"draftId"\s*:\s*"([^"]+)"/.exec(text)
+      return match === null ? '' : match[1]
+    }
+
+    function DraftCard(props) {
+      const phase = props === null || props === undefined ? '' : props.phase
+      const block = props === null || props === undefined ? null : props.block
+      const [draft, setDraft] = React.useState(null)
+      const [state, setState] = React.useState('ready')
+      const [error, setError] = React.useState('')
+      const [busy, setBusy] = React.useState('')
+      const [confirm, setConfirm] = React.useState(null)
+      const settled = React.useRef(false)
+      const draftId = phase === 'result' ? draftIdOf(block) : ''
+      settled.current = state !== 'ready'
+
+      // The harness has no host→client push channel we can rely on, so the
+      // card polls until it is sent or discarded. Two seconds is cheap: the
+      // route only touches an in-memory map.
+      React.useEffect(() => {
+        if (draftId === '') return undefined
+        let live = true
+        const load = async () => {
+          if (settled.current) return
+          const res = await api('/maildesk/api/draft', { op: 'get', draftId })
+          if (!live || settled.current) return
+          if (res.ok === true) { setDraft(res.draft); return }
+          setState('gone')
+          setError(res.error || 'this draft is no longer open')
+        }
+        void load()
+        const timer = setInterval(() => { void load() }, 2000)
+        return () => { live = false; clearInterval(timer) }
+      }, [draftId])
+
+      const send = async () => {
+        setBusy('send')
+        setError('')
+        const res = await api('/maildesk/api/send', { draftId })
+        const result = res.result || {}
+        setBusy('')
+        if (res.ok === true) { setState('sent'); setConfirm(null); return }
+        if (result.status === 'needs-confirmation') { setConfirm({ hash: result.hash, preview: result.preview || {} }); return }
+        setError(result.error || res.error || 'send failed')
+      }
+
+      const confirmSend = async () => {
+        if (confirm === null) return
+        setBusy('confirm')
+        const res = await api('/maildesk/api/send', { draftId, confirmHash: confirm.hash })
+        const result = res.result || {}
+        setBusy('')
+        if (res.ok === true) { setState('sent'); setConfirm(null); return }
+        setConfirm(null)
+        setError(result.status === 'needs-confirmation'
+          ? 'The draft changed while you were confirming — send it again.'
+          : (result.error || res.error || 'send failed'))
+      }
+
+      const discard = async () => {
+        setBusy('discard')
+        await api('/maildesk/api/draft', { op: 'discard', draftId })
+        setBusy('')
+        setState('discarded')
+      }
+
+      const shell = (stateClass, title, body, actions) => h('div', { className: 'md-card ' + stateClass },
+        h('div', { className: 'md-card-head' },
+          h('span', { className: 'md-card-badge' }, 'Draft'),
+          h('span', { className: 'md-card-title' }, title)),
+        body === null ? null : h('div', { className: 'md-card-body' }, body),
+        actions === null ? null : h('div', { className: 'md-card-actions' }, actions))
+
+      if (phase !== 'result') return shell('md-card-pending', 'Composing mail…', 'preparing the draft', null)
+      if (draftId === '') return shell('md-card-pending', 'Draft', 'the tool did not return a draft id', null)
+      if (state === 'sent') return shell('md-card-done', 'Sent', 'The message left the draft store and went to Outlook for delivery.', null)
+      if (state === 'discarded') return shell('md-card-done', 'Draft discarded', null, null)
+      if (state === 'gone') return shell('md-card-done', 'Draft closed', error === '' ? 'This draft is no longer open.' : error, null)
+      if (draft === null) return shell('md-card-pending', 'Draft', 'reading it…', null)
+
+      const to = formatPeople(draft.to)
+      const cc = formatPeople(draft.cc)
+      const subject = draft.subject === '' ? '(no subject)' : draft.subject
+      const modeLabel = draft.mode === 'forward' ? 'Forward' : draft.mode === 'replyAll' ? 'Reply all' : draft.mode === 'reply' ? 'Reply' : 'New mail'
+      const actions = confirm !== null
+        ? [
+            h('button', { className: 'md-btn md-btn-primary', onClick: confirmSend, disabled: busy !== '' },
+              busy === 'confirm' ? 'Sending…' : 'Send now'),
+            h('button', { className: 'md-btn', onClick: () => setConfirm(null), disabled: busy !== '' }, 'Back'),
+          ]
+        : [
+            h('button', { className: 'md-btn', onClick: () => { if (focusMailDraft !== null) focusMailDraft(draftId) } }, 'Edit in panel'),
+            h('button', { className: 'md-btn md-btn-primary', onClick: send, disabled: busy !== '' },
+              busy === 'send' ? 'Sending…' : 'Send…'),
+            h('button', { className: 'md-btn', onClick: discard, disabled: busy !== '' }, 'Discard'),
+          ]
+
+      return h('div', { className: 'md-card' },
+        h('div', { className: 'md-card-head' },
+          h('span', { className: 'md-card-badge' }, modeLabel),
+          h('span', { className: 'md-card-title' }, subject)),
+        h('div', { className: 'md-card-row' },
+          h('span', { className: 'md-card-label' }, 'To'),
+          h('span', { className: 'md-card-value' }, to === '' ? '(addressed by Outlook)' : to)),
+        cc === '' ? null : h('div', { className: 'md-card-row' },
+          h('span', { className: 'md-card-label' }, 'Cc'),
+          h('span', { className: 'md-card-value' }, cc)),
+        h('div', { className: 'md-card-body' }, snippetOf(draft.bodyHtml, 320) || 'The body is still empty.'),
+        error === '' ? null : h('div', { className: 'md-card-error' }, error),
+        confirm === null ? null : h('div', { className: 'md-card-confirm' },
+          h('div', { className: 'md-card-confirm-head' }, 'Send this?'),
+          h('div', { className: 'md-card-confirm-row' },
+            h('b', {}, 'To '), String(confirm.preview.to || to || '(addressed by Outlook)')),
+          h('div', { className: 'md-card-confirm-row' },
+            h('b', {}, 'Subject '), String(confirm.preview.subject || subject)),
+          h('div', { className: 'md-card-confirm-note' },
+            'Only this exact content is sent — editing it afterwards requires a new confirmation.')),
+        h('div', { className: 'md-card-actions' }, actions))
+    }
+
     return {
       name: 'dsh-arya-maildesk',
-      inject: ['slots'],
+      inject: ['slots', 'layout'],
       apply(ctx) {
         beacon('apply called (mail panel + badge)')
         const stylesTag = ensureStyles()
@@ -1163,6 +1389,21 @@ window.__ModuleLoader__.load({
 
         // The mailbox page, selected by its sidebar icon.
         ctx.slots.inject('main', () => ctx.slots.register({ name: 'main', key: 'mail' }, Panel))
+        // The draft the agent opens: one keyed row view for maildesk_compose.
+        // A keyed tool.call.toolview entry replaces the generic row for that
+        // exact tool name and leaves every other tool row alone.
+        ctx.slots.inject('tool.call.toolview', () => ctx.slots.register(
+          { name: 'tool.call.toolview', key: 'maildesk_compose' },
+          DraftCard,
+        ))
+        // [Edit in panel]: select the mail panel, then hand it the draft.
+        // selectPanel throws when the key is not registered, so a host without
+        // our main panel still keeps the card usable.
+        focusMailDraft = (draftId) => {
+          pendingMailDraft = draftId
+          try { ctx.layout.selectPanel('mail') } catch { /* no mail panel here */ }
+          draftBus.emit(draftId)
+        }
         ctx.slots.inject('sidebar.panellist', () => ctx.slots.register(
           { name: 'sidebar.panellist', id: 'mail', order: -6, label: 'Mail' },
           (props) => h(MailIcon, { size: props && props.wide === false ? 18 : 16 }),

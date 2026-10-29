@@ -2,6 +2,15 @@
 
 This project's version narrative puts **why** before **what**. Every entry starts with the motivation.
 
+## 2.17.1 — Naming the Outlook you actually have
+
+**Why**: the first machine this was tried on had Outlook installed — the new one — and the bridge answered "install the classic Win32 Outlook app". That is the wrong sentence for someone who is looking at an Outlook window: it sends them to reinstall software they already have instead of telling them the two clients are different and only one has a COM surface.
+
+**What changed**:
+- The bridge's pre-check now distinguishes the two cases. If no `Outlook.Application` class is registered **and** the new Outlook's data folder exists (`%LOCALAPPDATA%\Microsoft\Olk`), it says so by name: the new Outlook is installed, it has no COM automation surface, this bridge cannot drive it, and the choice is a machine with classic Outlook or a non-COM backend.
+- The old message stays for a machine with neither client.
+- Verified on a host running `Microsoft.OutlookForWindows` 1.2026.1013.100 (signed into a work account and two personal accounts): `POST /maildesk/api/call {"action":"account"}` returns the new text, and the panel shows it under its own "No classic Outlook answered on this machine" explanation with every action disabled and `unread count unavailable` rather than `0`.
+
 ## 2.17.0 — The draft can sit beside the conversation
 
 **Why**: the card in chat could show a draft, and `[Edit in panel]` took you to it, but "in panel" meant the chat disappeared. Reading the thread you are answering and writing the answer were still two different screens. The right Sidebar is the harness's own place for "something next to this conversation", so the draft belongs there too.

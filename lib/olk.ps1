@@ -79,6 +79,18 @@ try {
     # Outlook" (or nothing installed), ComObject creation fails with an
     # opaque ActiveX error — give the user an actionable message instead.
     if (-not (Test-Path 'Registry::HKEY_CLASSES_ROOT\Outlook.Application')) {
+      # Name the case that is now the common one. The new Outlook for Windows
+      # (an MSIX app, olk.exe) installs mail, calendar and even Microsoft's own
+      # Outlook MCP Server, but registers no COM classes, so this bridge can
+      # never drive it — telling someone with Outlook already installed to
+      # "install Outlook" only sends them in a circle.
+      $newOutlook = $false
+      if ($env:LOCALAPPDATA) {
+        $newOutlook = Test-Path (Join-Path $env:LOCALAPPDATA 'Microsoft\Olk')
+      }
+      if ($newOutlook) {
+        throw 'classic desktop Outlook not found, but the new Outlook for Windows is installed. The new Outlook has no COM automation surface, so this bridge cannot drive it. Use a machine with classic (Win32) Outlook, or add a non-COM mail backend.'
+      }
       throw 'classic desktop Outlook not found (HKCR\Outlook.Application missing). Install the classic Win32 Outlook app and sign in; the UWP "New Outlook" does not support COM automation.'
     }
     $outlook = New-Object -ComObject Outlook.Application

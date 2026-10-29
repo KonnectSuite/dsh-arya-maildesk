@@ -90,6 +90,14 @@ Asking the agent to draft a reply puts a card in the conversation instead of a l
 
 The card is a view of the same host-owned draft the panel edits, not a copy. There is no push channel from the host to the page in this harness, so the card polls `POST /maildesk/api/draft` with `op: "get"` and settles on whatever the panel last stored — editing in the panel and returning to the chat shows the edit. `Send…` uses the same two-step hash gate; `Edit in panel` switches to the Mail panel and opens the composer on that very draft, so there is still only one draft per thread no matter which surface started it.
 
+### The draft beside the conversation
+
+![The draft in the right Sidebar, with the conversation still on screen](docs/panel-beside-chat.png)
+
+`[Open beside chat]` puts the same draft in a tab of the right Sidebar, so the thread you are answering stays on screen while you send. It is a real Sidebar tab — a `sidebarRightTabs` type plus its keyed `sidebar.right.pane.tab` body — not an overlay, so it collapses, splits and closes the way the harness's own tabs do.
+
+The tab carries `[Send…] [Open in panel] [Discard]` and a `Close this tab` link, and it reads the draft from the same `op: "get"` route as the card. Sending from it cannot send stale content: if the draft changes between the preview and the confirmation, the retry no longer matches the hash and the tab asks you to send again rather than sending what you did not read.
+
 ## Quick start
 
 ```sh

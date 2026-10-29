@@ -162,6 +162,17 @@ window.__ModuleLoader__.load({
         '.md-card-confirm-note{margin-top:7px;font-size:11.5px;color:var(--dsw-alias-label-tertiary,#8a93a0)}',
         '.md-card-actions{display:flex;gap:8px;margin-top:10px;flex-wrap:wrap}',
 
+        /* --- the draft beside the chat (right-pane tab) --- */
+        '.md-rt{display:flex;flex-direction:column;gap:2px;padding:12px 14px;font:13px/1.45 system-ui,-apple-system,"Segoe UI",sans-serif;color:var(--dsw-alias-label-primary,#1b1b1b);height:100%;overflow:auto}',
+        '.md-rt *{box-sizing:border-box}',
+        '.md-rt-head{display:flex;align-items:baseline;gap:8px;margin-bottom:4px}',
+        '.md-rt-title{font-size:13.5px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}',
+        '.md-rt-body{margin-top:9px;white-space:pre-wrap;border-top:1px solid var(--dsw-alias-border-subtle,#e6e6e6);padding-top:9px}',
+        '.md-rt-note{margin:6px 0;color:var(--dsw-alias-label-secondary,#5a6472)}',
+        '.md-rt-foot{margin-top:12px;border-top:1px solid var(--dsw-alias-border-subtle,#e6e6e6);padding-top:8px}',
+        '.md-rt .md-card-actions{margin-top:12px}',
+        '.md-rt .md-link{background:none;border:0;padding:0;color:var(--dsw-alias-label-tertiary,#8a93a0);font:inherit;font-size:12px;cursor:pointer;text-decoration:underline}',
+
         /* --- main panel --- */
         '.md{position:relative;display:flex;flex-direction:column;height:100%;min-height:0;font:13px/1.45 system-ui,-apple-system,"Segoe UI",sans-serif;color:var(--dsw-alias-label-primary,#1b1b1b);background:var(--dsh-bg,#fff)}',
         '.md *{box-sizing:border-box}',
@@ -1229,6 +1240,9 @@ window.__ModuleLoader__.load({
     /** The panel is not mounted while the chat is showing, so an "open this
      *  draft" request that arrives first has to survive until it mounts. */
     let pendingMailDraft = null
+    /** Same idea for the right-pane tab: the id it should show, kept until the
+     *  tab body mounts and reads its own navigation parameters. */
+    let pendingRightDraft = null
 
     function snippetOf(html, max) {
       const text = String(html || '').replace(/<[^>]*>/g, ' ').replace(/&nbsp;/g, ' ')
@@ -1340,6 +1354,7 @@ window.__ModuleLoader__.load({
           ]
         : [
             h('button', { className: 'md-btn', onClick: () => { if (focusMailDraft !== null) focusMailDraft(draftId) } }, 'Edit in panel'),
+            h('button', { className: 'md-btn', onClick: () => { if (openDraftBesideChat !== null) openDraftBesideChat(draftId) } }, 'Open beside chat'),
             h('button', { className: 'md-btn md-btn-primary', onClick: send, disabled: busy !== '' },
               busy === 'send' ? 'Sending…' : 'Send…'),
             h('button', { className: 'md-btn', onClick: discard, disabled: busy !== '' }, 'Discard'),
@@ -1368,9 +1383,134 @@ window.__ModuleLoader__.load({
         h('div', { className: 'md-card-actions' }, actions))
     }
 
+    // --- the draft beside the chat (right-pane tab) -----------------------
+    // A right-Sidebar tab is two registrations: a static type in
+    // ctx.sidebarRightTabs, and the keyed body under the type's own `id`. The
+    // body receives `useTabInfo`, which is how it finds the draft id the
+    // opener passed as `params`.
+    const MAILDESK_TAB_ID = 'dsh-arya-maildesk:draft'
+    const MAILDESK_TAB_KIND = 'maildesk-draft'
+    /** Set by apply once ctx.sidebarRight is live. */
+    let openDraftBesideChat = null
+
+    function RightPaneDraft(props) {
+      const useTabInfo = props === null || props === undefined ? undefined : props.useTabInfo
+      const [draft, setDraft] = React.useState(null)
+      const [state, setState] = React.useState('ready')
+      const [error, setError] = React.useState('')
+      const [busy, setBusy] = React.useState('')
+      const [confirm, setConfirm] = React.useState(null)
+
+      let info = null
+      if (typeof useTabInfo === 'function') {
+        try { info = useTabInfo() } catch { info = null }
+      }
+      const navigation = info === null || info === undefined || info.tab === undefined ? null : info.tab.navigation
+      const params = navigation === null || navigation === undefined ? null : navigation.params
+      const opened = params !== null && params !== undefined && typeof params.draftId === 'string' ? params.draftId : ''
+      const draftId = opened !== '' ? opened : (pendingRightDraft === null ? '' : pendingRightDraft)
+      const tabActions = info === null || info === undefined || info.tab === undefined ? null : info.tab.actions
+
+      React.useEffect(() => {
+        if (draftId === '') return undefined
+        let live = true
+        const load = async () => {
+          const res = await api('/maildesk/api/draft', { op: 'get', draftId })
+          if (!live) return
+          if (res.ok === true) { setDraft(res.draft); return }
+          setState('gone')
+          setError(res.error || 'this draft is no longer open')
+        }
+        void load()
+        const timer = setInterval(() => { void load() }, 2000)
+        return () => { live = false; clearInterval(timer) }
+      }, [draftId])
+
+      const send = async () => {
+        setBusy('send')
+        setError('')
+        const res = await api('/maildesk/api/send', { draftId })
+        const result = res.result || {}
+        setBusy('')
+        if (res.ok === true) { setState('sent'); setConfirm(null); return }
+        if (result.status === 'needs-confirmation') { setConfirm({ hash: result.hash, preview: result.preview || {} }); return }
+        setError(result.error || res.error || 'send failed')
+      }
+
+      const confirmSend = async () => {
+        if (confirm === null) return
+        setBusy('confirm')
+        const res = await api('/maildesk/api/send', { draftId, confirmHash: confirm.hash })
+        const result = res.result || {}
+        setBusy('')
+        if (res.ok === true) { setState('sent'); setConfirm(null); return }
+        setConfirm(null)
+        setError(result.status === 'needs-confirmation'
+          ? 'The draft changed while you were confirming — send it again.'
+          : (result.error || res.error || 'send failed'))
+      }
+
+      const discard = async () => {
+        setBusy('discard')
+        await api('/maildesk/api/draft', { op: 'discard', draftId })
+        setBusy('')
+        setState('discarded')
+      }
+
+      if (draftId === '') {
+        return h('div', { className: 'md-rt' },
+          h('p', { className: 'md-rt-note' }, 'No draft yet. Ask the agent for a reply, or open one from the mail panel.'))
+      }
+      if (state === 'sent') return h('div', { className: 'md-rt' }, h('p', { className: 'md-rt-note' }, 'Sent for delivery.'))
+      if (state === 'discarded') return h('div', { className: 'md-rt' }, h('p', { className: 'md-rt-note' }, 'Draft discarded.'))
+      if (state === 'gone') return h('div', { className: 'md-rt' }, h('p', { className: 'md-rt-note' }, error === '' ? 'This draft is no longer open.' : error))
+      if (draft === null) return h('div', { className: 'md-rt' }, h('p', { className: 'md-rt-note' }, 'Reading the draft…'))
+
+      const to = formatPeople(draft.to)
+      const cc = formatPeople(draft.cc)
+      const subject = draft.subject === '' ? '(no subject)' : draft.subject
+      const modeLabel = draft.mode === 'forward' ? 'Forward' : draft.mode === 'replyAll' ? 'Reply all' : draft.mode === 'reply' ? 'Reply' : 'New mail'
+      const actions = confirm !== null
+        ? [
+            h('button', { className: 'md-btn md-btn-primary', onClick: confirmSend, disabled: busy !== '' },
+              busy === 'confirm' ? 'Sending…' : 'Send now'),
+            h('button', { className: 'md-btn', onClick: () => setConfirm(null), disabled: busy !== '' }, 'Back'),
+          ]
+        : [
+            h('button', { className: 'md-btn md-btn-primary', onClick: send, disabled: busy !== '' },
+              busy === 'send' ? 'Sending…' : 'Send…'),
+            h('button', { className: 'md-btn', onClick: () => { if (focusMailDraft !== null) focusMailDraft(draftId) } }, 'Open in panel'),
+            h('button', { className: 'md-btn', onClick: discard, disabled: busy !== '' }, 'Discard'),
+          ]
+
+      return h('div', { className: 'md-rt' },
+        h('div', { className: 'md-rt-head' },
+          h('span', { className: 'md-card-badge' }, modeLabel),
+          h('span', { className: 'md-rt-title' }, subject)),
+        h('div', { className: 'md-card-row' },
+          h('span', { className: 'md-card-label' }, 'To'),
+          h('span', { className: 'md-card-value' }, to === '' ? '(addressed by Outlook)' : to)),
+        cc === '' ? null : h('div', { className: 'md-card-row' },
+          h('span', { className: 'md-card-label' }, 'Cc'),
+          h('span', { className: 'md-card-value' }, cc)),
+        h('div', { className: 'md-rt-body' }, snippetOf(draft.bodyHtml, 1200) || 'The body is still empty.'),
+        error === '' ? null : h('div', { className: 'md-card-error' }, error),
+        confirm === null ? null : h('div', { className: 'md-card-confirm' },
+          h('div', { className: 'md-card-confirm-head' }, 'Send this?'),
+          h('div', { className: 'md-card-confirm-row' },
+            h('b', {}, 'To '), String(confirm.preview.to || to || '(addressed by Outlook)')),
+          h('div', { className: 'md-card-confirm-row' },
+            h('b', {}, 'Subject '), String(confirm.preview.subject || subject)),
+          h('div', { className: 'md-card-confirm-note' },
+            'Only this exact content is sent — editing it afterwards requires a new confirmation.')),
+        h('div', { className: 'md-card-actions' }, actions),
+        tabActions === null ? null : h('div', { className: 'md-rt-foot' },
+          h('button', { className: 'md-link', onClick: () => { try { tabActions.close() } catch { /* tab already gone */ } } }, 'Close this tab')))
+    }
+
     return {
       name: 'dsh-arya-maildesk',
-      inject: ['slots', 'layout'],
+      inject: ['slots', 'layout', 'sidebarRightTabs', 'sidebarRight'],
       apply(ctx) {
         beacon('apply called (mail panel + badge)')
         const stylesTag = ensureStyles()
@@ -1403,6 +1543,26 @@ window.__ModuleLoader__.load({
           pendingMailDraft = draftId
           try { ctx.layout.selectPanel('mail') } catch { /* no mail panel here */ }
           draftBus.emit(draftId)
+        }
+        // [Open beside chat]: the draft in the right Sidebar, next to the
+        // conversation instead of replacing it. A tab is a static type plus a
+        // keyed body, and only `openTab` after both exist.
+        ctx.effect(() => ctx.sidebarRightTabs.register({
+          id: MAILDESK_TAB_ID,
+          kind: MAILDESK_TAB_KIND,
+          title: () => 'Mail draft',
+        }), 'dsh-arya-maildesk: draft tab type')
+        ctx.slots.inject('sidebar.right.pane.tab', () => ctx.slots.register(
+          { name: 'sidebar.right.pane.tab', key: MAILDESK_TAB_ID },
+          RightPaneDraft,
+        ))
+        openDraftBesideChat = (draftId) => {
+          pendingRightDraft = draftId
+          try {
+            ctx.sidebarRight.openTab(MAILDESK_TAB_KIND, { params: { draftId } })
+          } catch (err) {
+            console.warn('[dsh-arya-maildesk] the draft tab could not open', err)
+          }
         }
         ctx.slots.inject('sidebar.panellist', () => ctx.slots.register(
           { name: 'sidebar.panellist', id: 'mail', order: -6, label: 'Mail' },

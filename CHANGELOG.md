@@ -2,6 +2,17 @@
 
 This project's version narrative puts **why** before **what**. Every entry starts with the motivation.
 
+## 2.17.0 — The draft can sit beside the conversation
+
+**Why**: the card in chat could show a draft, and `[Edit in panel]` took you to it, but "in panel" meant the chat disappeared. Reading the thread you are answering and writing the answer were still two different screens. The right Sidebar is the harness's own place for "something next to this conversation", so the draft belongs there too.
+
+**What changed**:
+- A right-Sidebar tab is two registrations, and the plugin now makes both: a static type via `ctx.sidebarRightTabs.register({ id: 'dsh-arya-maildesk:draft', kind: 'maildesk-draft', title })`, and the body at the keyed slot `sidebar.right.pane.tab` under that same id. The single `rightbar` / `rightbar.session` slots are left alone — they belong to the shipped Sidebar.
+- `[Open beside chat]` on the draft card calls `ctx.sidebarRight.openTab('maildesk-draft', { params: { draftId } })`. The body reads the id back from `useTabInfo().tab.navigation.params`, falling back to `pendingRightDraft` because the tab body can mount after the click.
+- The tab shows the same host-owned draft as the card and the panel: mode, subject, To/Cc, a 1200-character body excerpt, `[Send…] [Open in panel] [Discard]` and `Close this tab` through `info.tab.actions.close()`. Send keeps the two-step hash gate; a draft edited during the confirmation reports "The draft changed while you were confirming — send it again." rather than sending stale content.
+- All three surfaces poll `op: "get"`, so there is still exactly one draft per thread and no second copy of it anywhere.
+- `inject` is now `['slots', 'layout', 'sidebarRightTabs', 'sidebarRight']`.
+
 ## 2.16.0 — The draft lives in the conversation
 
 **Why**: the draft was reachable only by leaving the chat. You asked the agent for a reply, it answered "draft created", and the thing itself was in another panel — so the conversation about a mail and the mail you were writing could not be on screen together. A tool row saying `{"status":"ok","draftId":"draft-…"}` is not a draft; it is a receipt for one.

@@ -2,6 +2,20 @@
 
 本项目的版本叙事遵循"为什么改"优先于"改了什么"。每条都先给动机。
 
+## 2.12.0 — 邮件管理：删除、移动、已读、文件夹与分页列表（fork 首个增量）
+
+（本仓库是 `dsh-outlook` 的 fork，基线 `5a2ec7d` / v2.11.0，见 `NOTICE` 与 `UPSTREAM.md`。）
+
+**为什么**：上游 18 个工具把"读"做到了极致，却一个"改"都没有——没有删除、没有移动/归档、没有改已读，也没有文件夹树和分页列表。于是 agent 能在收件箱里看和搜，却永远不能替用户把它整理干净，而"整理"恰恰是每天真正花时间的那件事。更实际的阻塞在 GUI 上：`search_mail` 的 `limit` 上限 50 且没有 offset，做不出一个能往下滚的列表视图——面板的第一块砖正好缺在这里。
+
+**改了什么**：
+- 桥（`lib/olk.ps1`）新增 5 个动作，**全部为增量**，既有的 18 个分支一个字符都没动：`list_folders`（BFS 遍历所有 store 的文件夹树，返回 entryId/路径/层级/子项数/未读数，`counts:false` 可跳过两次计数读取——大邮箱上那是每文件夹一次 COM 读）、`list_mail`（文件夹 + 排序 + offset/limit≤200 + 可选仅未读 + 可选 160 字预览，返回 total/offset/returned，这是"浏览"而非"搜索"）、`move_mail`（`Item.Move()`，**回传新 entryId**，因为移动会换 ID，调用方必须换新的）、`delete_mail`（只做软删除 `Item.Delete()`，进"已删除邮件"，`recoverable:true`）、`mark_read`（`UnRead` + `Save()`，可反选）。
+- 新增 `Resolve-Folder`：文件夹可用路径（`Inbox/项目/2026`，`/` 与 `\` 都收）、英文通用名（Inbox / Sent Items / Drafts / Deleted Items）或 entryId。**故意不认中文别名**——源码保持纯 ASCII，任何非 UTF-8 的传输都不可能把一个中文字面量悄悄改成"永远匹配不上"的样子。这条是被上游 CHANGELOG 里两次编码事故教出来的。
+- 单次批量上限 500，多封逐封 try/catch，失败项进 `failed[]` 而不是整批失败——拖 40 封时不能因为第 17 封是会议邀请就全军覆没。
+- `delete_mail` 额外一道 `expected` 数量门：调用方必须声明"我认为这里有 N 封"，实际取到 M≠N 时**直接拒绝**并让人重读文件夹，而不是删掉一批它没看清的东西。删除仍是软删除，不碰"已删除邮件"里的永久清除。
+- host 新增 5 个工具：`outlook_list_folders`、`outlook_list_mail`、`outlook_move_mail`、`outlook_delete_mail`、`outlook_mark_read`（共 23 个）。
+- **没有新增确认门**，这是有意的：既有的两段式确认 + 内容哈希 + `OLK_CONFIRM` 令牌只针对"信会离开机器"的动作（`send_draft`/`reply_mail`/带与会人的 `calendar_create`/`respond_meeting`/`meeting_update`/`meeting_cancel`）。删除与移动不出机器，且删除是可撤销的软删除，硬塞进发信确认里只会训练用户无脑点确认——真正的风险用数量门兜。
+
 ## 2.11.0 — 聊天里的"打开"链接点击不再留死标签页
 
 **为什么**：agent 在会话里贴的 `[打开](…/olk-notify/open?entryId=…)` markdown 链接走 GET 导航——每点一次就多出一个"已在 Outlook 中打开 / 此页面可关闭"的标签页，最常用的"看一眼这封邮件"动作反而在浏览器里留下一排垃圾标签。同时该链接硬编码 `127.0.0.1:3080`，自定义端口部署时点击直接连接失败（README 已列为已知边界）。

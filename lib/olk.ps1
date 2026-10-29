@@ -18,6 +18,40 @@ $out = [ordered]@{}
 function Out-Json($obj) {
   [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
   $obj | ConvertTo-Json -Depth 6
+
+function Resolve-Folder($ns, $spec) {
+  # Resolve a folder to a Folder object. Accepted forms, in order:
+  #   - a folder entryId from list_folders (>= 60 chars)
+  #   - a well-known English name: Inbox, Sent Items / Sent, Drafts, Deleted Items
+  #   - a path from the primary store root: "Inbox\ProjectA", "Projects/2026"
+  # An empty spec means Inbox. Segments use / or \; the first segment may
+  # name a well-known folder so "Inbox/ProjectA" resolves the same way.
+  #
+  # Localized (for example CJK) folder names are NOT matched here on purpose:
+  # this source must stay ASCII so that no non-UTF-8 transport can corrupt a
+  # literal into one that silently never matches. A localized profile should
+  # pass a path or a folder entryId from list_folders instead.
+  $s = [string]$spec
+  if ($s -eq '') { return $ns.GetDefaultFolder(6) }
+  if ($s.Length -ge 60) {
+    try { return $ns.GetFolderFromID($s) }
+    catch { throw "folder entryId not found: a stored id goes stale when the folder moves. Re-run list_folders." }
+  }
+  $s = $s -replace '/', '\'
+  $segs = @($s -split '\\' | Where-Object { $_ -ne '' })
+  $f = $ns.Folders.Item(1)
+  if ($segs.Count -gt 0) {
+    $first = $segs[0]
+    if ($first -ieq 'Inbox') { $f = $ns.GetDefaultFolder(6); $segs = @($segs | Select-Object -Skip 1) }
+    elseif ($first -ieq 'Sent Items' -or $first -ieq 'Sent') { $f = $ns.GetDefaultFolder(5); $segs = @($segs | Select-Object -Skip 1) }
+    elseif ($first -ieq 'Drafts') { $f = $ns.GetDefaultFolder(16); $segs = @($segs | Select-Object -Skip 1) }
+    elseif ($first -ieq 'Deleted Items' -or $first -ieq 'Deleted') { $f = $ns.GetDefaultFolder(3); $segs = @($segs | Select-Object -Skip 1) }
+  }
+  foreach ($seg in $segs) {
+    try { $f = $f.Folders.Item($seg) } catch { throw "folder not found: '$seg' (in path '$s')" }
+  }
+  return $f
+}
 }
 
 try {
@@ -711,6 +745,205 @@ try {
       $out.wasUnread = $wasUnread
     }
 
+
+    # Mail management (fork addition). Everything below is ADDITIVE: no
+    # existing case is touched. The machine that wrote this has no Outlook
+    # installed, so nothing here could be regression-tested against the
+    # working read paths - keep it that way until M0 validates on a real
+    # profile.
+    # ------------------------------------------------------------------
+
+    'list_folders' {
+      # Folder tree of every store in the profile, for the GUI folder pane.
+      # Counts cost one COM read per folder; pass counts=false on very large
+      # mailboxes and fetch them lazily per folder instead.
+      $maxDepth = if ($args_.maxDepth) { [int]$args_.maxDepth } else { 6 }
+      $withCounts = $true
+      if ($null -ne $args_.counts) { $withCounts = [bool]$args_.counts }
+      $folders = @()
+      $q = New-Object System.Collections.Queue
+      foreach ($st in $ns.Folders) {
+        $q.Enqueue((New-Object psobject -Property @{ F = $st; D = 0; S = [string]$st.Name }))
+      }
+      while ($q.Count -gt 0) {
+        $node = $q.Dequeue()
+        $f = $node.F
+        $d = [int]$node.D
+        $cnt = 0
+        $unc = 0
+        if ($withCounts) {
+          try { $cnt = [int]$f.Items.Count } catch {}
+          try { $unc = [int]$f.UnReadItemCount } catch {}
+        }
+        $folders += [ordered]@{
+          entryId    = [string]$f.EntryID
+          name       = [string]$f.Name
+          path       = ([string]$f.FolderPath -replace '/', '\')
+          store      = [string]$node.S
+          depth      = $d
+          childCount = [int]$f.Folders.Count
+          itemCount  = $cnt
+          unread     = $unc
+        }
+        if ($d -lt $maxDepth) {
+          foreach ($c in $f.Folders) {
+            $q.Enqueue((New-Object psobject -Property @{ F = $c; D = ($d + 1); S = [string]$node.S }))
+          }
+        }
+      }
+      $out.folders = $folders
+    }
+
+    'list_mail' {
+      # One page of one folder, for a GUI list pane. search_mail answers
+      # "find mail matching X"; this answers "show me folder F, page N".
+      # Paging is offset-based on a sorted view, so a new arrival shifts
+      # later pages - a GUI should re-read page one when it regains focus.
+      $folder = Resolve-Folder $ns ([string]$args_.folder)
+      $limit = if ($args_.limit) { [int]$args_.limit } else { 50 }
+      if ($limit -lt 1) { $limit = 1 }
+      if ($limit -gt 200) { $limit = 200 }
+      $offset = if ($null -ne $args_.offset) { [int]$args_.offset } else { 0 }
+      if ($offset -lt 0) { $offset = 0 }
+      $desc = $true
+      if ($null -ne $args_.descending) { $desc = [bool]$args_.descending }
+      $sortField = 'ReceivedTime'
+      $sf = [string]$args_.sort
+      if ($sf -ieq 'subject') { $sortField = 'Subject' }
+      elseif ($sf -ieq 'sender') { $sortField = 'SenderName' }
+      $withPreview = $false
+      if ($null -ne $args_.preview) { $withPreview = [bool]$args_.preview }
+      $items = $folder.Items
+      if ($args_.unreadOnly -eq $true) { $items = $items.Restrict('[UnRead] = True') }
+      $items.Sort($sortField, $desc)
+      $total = [int]$items.Count
+      $mails = @()
+      $i = $offset + 1
+      $seen = 0
+      # Item(i) throws past the boundary instead of returning null, so the
+      # loop is bounded by the count read above (upstream quirk, preserved).
+      while ($seen -lt $limit -and $i -le $total) {
+        $it = $items.Item($i)
+        # 43 = olMail, 53 = olMeetingRequest: invites belong in an inbox list.
+        if ($it.Class -eq 43 -or $it.Class -eq 53) {
+          $smtp = $null
+          try { $smtp = [string]$it.SenderEmailAddress } catch {}
+          $attach = 0
+          try { $attach = [int]$it.Attachments.Count } catch {}
+          $preview = ''
+          if ($withPreview) {
+            try {
+              $b = [string]$it.Body
+              if ($b.Length -gt 160) { $b = $b.Substring(0, 160) }
+              $preview = ($b -replace '\s+', ' ').Trim()
+            } catch {}
+          }
+          $mails += [ordered]@{
+            entryId    = $it.EntryID
+            subject    = [string]$it.Subject
+            sender     = [string]$it.SenderName
+            senderSmtp = $smtp
+            received   = $it.ReceivedTime.ToString('yyyy-MM-dd HH:mm')
+            unread     = [bool]$it.UnRead
+            hasAttach  = ($attach -gt 0)
+            preview    = $preview
+          }
+          $seen++
+        }
+        $i++
+      }
+      $out.total = $total
+      $out.offset = $offset
+      $out.returned = $mails.Count
+      $out.folderPath = [string]$folder.FolderPath
+      $out.unreadInFolder = [int]$folder.UnReadItemCount
+      $out.mails = $mails
+    }
+
+    'move_mail' {
+      # Bulk move/archive. Move() returns the NEW item and the EntryID
+      # changes with it, so the caller gets the new ids back or its
+      # selection goes stale.
+      $dest = Resolve-Folder $ns ([string]$args_.destFolder)
+      $ids = @()
+      if ($args_.entryIds) { $ids = @($args_.entryIds) } elseif ($args_.entryId) { $ids = @([string]$args_.entryId) }
+      if ($ids.Count -eq 0) { throw 'entryId or entryIds is required.' }
+      if ($ids.Count -gt 500) { throw "refusing to move $($ids.Count) items in one call (max 500)." }
+      $movedIds = @()
+      $failed = @()
+      foreach ($id in $ids) {
+        try {
+          $it = $ns.GetItemFromID([string]$id)
+          $newItem = $it.Move($dest)
+          $movedIds += [string]$newItem.EntryID
+        } catch {
+          $failed += [ordered]@{ entryId = [string]$id; error = $_.Exception.Message }
+        }
+      }
+      $out.moved = $movedIds.Count
+      $out.destPath = [string]$dest.FolderPath
+      $out.newEntryIds = $movedIds
+      $out.failed = $failed
+    }
+
+    'delete_mail' {
+      # SOFT delete only: Item.Delete() moves the item to Deleted Items, so
+      # the user can undo it from Outlook. There is deliberately no
+      # permanent-delete path: purging Deleted Items defeats the retention
+      # policy on a managed mailbox and cannot be undone.
+      # expected is a safety gate: the caller states how many items the
+      # human actually selected, and a mismatch aborts instead of deleting
+      # a wider set than was shown.
+      $ids = @()
+      if ($args_.entryIds) { $ids = @($args_.entryIds) } elseif ($args_.entryId) { $ids = @([string]$args_.entryId) }
+      if ($ids.Count -eq 0) { throw 'entryId or entryIds is required.' }
+      if ($ids.Count -gt 500) { throw "refusing to delete $($ids.Count) items in one call (max 500)." }
+      if ($null -ne $args_.expected) {
+        $expect = [int]$args_.expected
+        if ($expect -ne $ids.Count) { throw "refusing to delete: caller expected $expect items but supplied $($ids.Count). Re-read the folder and retry." }
+      }
+      $deletedIds = @()
+      $failed = @()
+      foreach ($id in $ids) {
+        try {
+          $it = $ns.GetItemFromID([string]$id)
+          $eid = [string]$it.EntryID
+          $it.Delete()
+          $deletedIds += $eid
+        } catch {
+          $failed += [ordered]@{ entryId = [string]$id; error = $_.Exception.Message }
+        }
+      }
+      $out.deleted = $deletedIds.Count
+      $out.recoverable = $true
+      $out.deletedEntryIds = $deletedIds
+      $out.failed = $failed
+    }
+
+    'mark_read' {
+      # Set or clear the read state on one or many items.
+      $read = $true
+      if ($null -ne $args_.read) { $read = [bool]$args_.read }
+      $ids = @()
+      if ($args_.entryIds) { $ids = @($args_.entryIds) } elseif ($args_.entryId) { $ids = @([string]$args_.entryId) }
+      if ($ids.Count -eq 0) { throw 'entryId or entryIds is required.' }
+      if ($ids.Count -gt 500) { throw "refusing to touch $($ids.Count) items in one call (max 500)." }
+      $n = 0
+      $failed = @()
+      foreach ($id in $ids) {
+        try {
+          $it = $ns.GetItemFromID([string]$id)
+          $it.UnRead = (-not $read)
+          $it.Save()
+          $n++
+        } catch {
+          $failed += [ordered]@{ entryId = [string]$id; error = $_.Exception.Message }
+        }
+      }
+      $out.updated = $n
+      $out.read = $read
+      $out.failed = $failed
+    }
     default {
       throw "Unknown action: $action"
     }

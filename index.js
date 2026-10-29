@@ -893,5 +893,109 @@ export function apply(ctx) {
     presentCall: () => ({ card: 'generic', title: 'Check new Outlook mail', kind: 'other', rawInput: {} }),
   })
 
-  console.info('[dsh-outlook] registered 18 Outlook COM tools')
+
+  ctx.tools.register({
+    name: 'outlook_list_folders',
+    description: 'List the Outlook folder tree for every mailbox store: name, path, entryId, depth, item and unread counts. Read-only. Use a returned entryId or path as the folder argument of the mail tools.',
+    parameters: {
+      type: 'object',
+      additionalProperties: true,
+      properties: {
+        maxDepth: { type: 'number', description: 'Maximum folder depth to walk. Default 6.' },
+        counts: { type: 'boolean', description: 'Include item/unread counts (one COM read per folder). Default true; pass false on very large mailboxes.' },
+      },
+    },
+    output: {
+      schema: { type: 'object', additionalProperties: true },
+      render: (_a, v) => [{ type: 'text', text: JSON.stringify(v) }],
+    },
+    async execute(a) { return olk('list_folders', a) },
+    presentCall: () => ({ card: 'generic', title: 'List Outlook folders', kind: 'other', rawInput: {} }),
+  })
+
+  ctx.tools.register({
+    name: 'outlook_list_mail',
+    description: 'List one page of a folder, newest first by default (read-only). Unlike outlook_search_mail this is not a search: it answers what is in this folder, with offset/limit paging and a total count. Use it to browse a mailbox.',
+    parameters: {
+      type: 'object',
+      additionalProperties: true,
+      properties: {
+        folder: { type: 'string', description: 'Folder name, path ("Inbox/ProjectA"), or entryId from outlook_list_folders. Default Inbox.' },
+        offset: { type: 'number', description: 'Items to skip. Default 0.' },
+        limit: { type: 'number', description: 'Max items. Default 50, max 200.' },
+        sort: { type: 'string', enum: ['received', 'subject', 'sender'], description: 'Sort field. Default received.' },
+        descending: { type: 'boolean', description: 'Sort direction. Default true (newest first).' },
+        unreadOnly: { type: 'boolean', description: 'Only unread items.' },
+        preview: { type: 'boolean', description: 'Include a 160-char body preview per item (one COM read per item). Default false.' },
+      },
+    },
+    output: {
+      schema: { type: 'object', additionalProperties: true },
+      render: (_a, v) => [{ type: 'text', text: JSON.stringify(v) }],
+    },
+    async execute(a) { return olk('list_mail', a) },
+    presentCall: (a) => ({ card: 'generic', title: 'List Outlook mail', kind: 'other', rawInput: { folder: a.folder, offset: a.offset, limit: a.limit } }),
+  })
+
+  ctx.tools.register({
+    name: 'outlook_move_mail',
+    description: 'Move or archive emails to another folder: one entryId or an array of entryIds, plus a destination folder (name, path, or folder entryId). Returns the NEW entryIds, because moving changes them. Recoverable; nothing leaves the machine.',
+    parameters: {
+      type: 'object',
+      additionalProperties: true,
+      properties: {
+        entryId: { type: 'string', description: 'Single mail entryId.' },
+        entryIds: { type: 'array', items: { type: 'string' }, description: 'Several mail entryIds (max 500).' },
+        destFolder: { type: 'string', description: 'Destination folder: "Archive", "Inbox/ProjectA", or an entryId from outlook_list_folders.' },
+      },
+      required: ['destFolder'],
+    },
+    output: {
+      schema: { type: 'object', additionalProperties: true },
+      render: (_a, v) => [{ type: 'text', text: JSON.stringify(v) }],
+    },
+    async execute(a) { return olk('move_mail', a) },
+    presentCall: (a) => ({ card: 'generic', title: 'Move Outlook mail', kind: 'other', rawInput: { destFolder: a.destFolder, entryIds: a.entryIds } }),
+  })
+
+  ctx.tools.register({
+    name: 'outlook_delete_mail',
+    description: 'Delete emails by entryId or entryIds. SOFT delete only: items go to Deleted Items and the user can undo them in Outlook. Pass expected equal to the number of entryIds you are deleting; the bridge aborts on a mismatch, so a stale selection cannot delete more than the user saw. No permanent delete exists.',
+    parameters: {
+      type: 'object',
+      additionalProperties: true,
+      properties: {
+        entryId: { type: 'string', description: 'Single mail entryId.' },
+        entryIds: { type: 'array', items: { type: 'string' }, description: 'Several mail entryIds (max 500).' },
+        expected: { type: 'number', description: 'How many items the human selected. The bridge aborts when it does not match the number of entryIds supplied.' },
+      },
+    },
+    output: {
+      schema: { type: 'object', additionalProperties: true },
+      render: (_a, v) => [{ type: 'text', text: JSON.stringify(v) }],
+    },
+    async execute(a) { return olk('delete_mail', a) },
+    presentCall: (a) => ({ card: 'generic', title: 'Delete Outlook mail', kind: 'other', rawInput: { entryIds: a.entryIds, expected: a.expected } }),
+  })
+
+  ctx.tools.register({
+    name: 'outlook_mark_read',
+    description: 'Mark emails read or unread by entryId or entryIds. Local state only; nothing leaves the machine.',
+    parameters: {
+      type: 'object',
+      additionalProperties: true,
+      properties: {
+        entryId: { type: 'string', description: 'Single mail entryId.' },
+        entryIds: { type: 'array', items: { type: 'string' }, description: 'Several mail entryIds (max 500).' },
+        read: { type: 'boolean', description: 'true marks read (default); false marks unread.' },
+      },
+    },
+    output: {
+      schema: { type: 'object', additionalProperties: true },
+      render: (_a, v) => [{ type: 'text', text: JSON.stringify(v) }],
+    },
+    async execute(a) { return olk('mark_read', a) },
+    presentCall: (a) => ({ card: 'generic', title: 'Mark Outlook mail read/unread', kind: 'other', rawInput: { entryIds: a.entryIds, read: a.read } }),
+  })
+  console.info('[dsh-outlook] registered 23 Outlook COM tools')
 }

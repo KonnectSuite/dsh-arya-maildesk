@@ -1,0 +1,19 @@
+dsh-maildesk
+============
+
+This package is a fork of dsh-outlook, and includes substantial portions of it.
+
+  dsh-outlook
+  https://github.com/UnknowCao/dsh-outlook
+  Copyright (c) 2026 dsh-outlook contributors
+  Licensed under the MIT License (see LICENSE)
+
+Base commit: 5a2ec7d6bbdcaed48a8b1dc04d18dc0bb0c64659 (v2.11.0)
+
+Files derived from dsh-outlook: lib/olk.ps1 (extended), index.js (extended),
+cordis.patch.yml, README.md, TESTCASES.md, assets/*, and lib/watch.ps1
+(unchanged for now; scheduled for replacement by a resident bridge process).
+
+Modifications are recorded in CHANGELOG.md. The MIT text in LICENSE is
+unchanged and applies to the derived portions as well. Keep this file and
+LICENSE with any redistribution.

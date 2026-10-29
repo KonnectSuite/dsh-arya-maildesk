@@ -58,7 +58,7 @@
 
 A **Mail** icon in the sidebar opens a three-pane mailbox: folder rail, message list with a real selection (click, shift-range, ctrl-toggle), reading pane, and the organize actions — mark read or unread, move to a folder, delete to Deleted Items. A page loads 100 rows and pages on demand; the unread-only filter and the sort run in Outlook, not in the browser.
 
-The data path is one allowlisted host route, `POST /maildesk/api/call`, guarded by the same origin check as the badge. It accepts `account`, `list_folders`, `list_mail`, `read_mail`, `mark_read`, `move_mail`, `delete_mail` and `open_mail`. **Sending is not on that list** — the panel can organize a mailbox, and only the agent's two-call confirmation can send from it.
+The data path is one allowlisted host route, `POST /maildesk/api/call`, guarded by the same origin check as the badge. It accepts `account`, `list_folders`, `list_mail`, `read_mail`, `mark_read`, `move_mail`, `delete_mail` and `open_mail`. **Sending is not on that list**, and cannot be reached through it.
 
 No Outlook on this machine? `MAILDESK_FIXTURE=1` serves a synthetic mailbox and the header says `FIXTURE DATA`, so the interface can be developed and reviewed without COM. It is opt-in on purpose: a COM failure is reported as an error, never answered with invented mail.
 
@@ -69,6 +69,18 @@ No Outlook on this machine? `MAILDESK_FIXTURE=1` serves a synthetic mailbox and 
 HTML bodies are parsed and rebuilt against an allowlist rather than injected: known tags and attributes survive, `<script>`, `<style>` and the embedding family are dropped with their contents, every `<img>` becomes a *remote image blocked* chip so a tracking pixel never sends a read receipt, and only `http:`, `https:`, `mailto:` and `tel:` links survive with `rel="noopener noreferrer"`. Style properties are allowlisted too, so `url()`, `expression()` and `behavior` cannot come back in through CSS.
 
 Proofpoint rewrites inbound URLs. The reader unwraps both the `urldefense.proofpoint.com/v2/url?u=…` and the `…/v3/__…__;…` forms, so a vendor link opens the vendor and the target you inspect is the one you will actually visit. The bridge returns `HTMLBody` raw — it is the renderer, which owns a document parser, that decides what survives.
+
+### Replying from the panel
+
+![The composer: recipients inherited from the thread, the quoted original rendered below](docs/compose.png)
+
+Reply, Reply all and Forward open a composer over the panel with the recipients already resolved from the thread, a `Re:` subject, and the quoted original rendered underneath the body. The draft is **not** an Outlook item: it lives in the host half, keyed by account and thread, so asking for the same reply twice reuses one draft instead of stacking a second in Outlook's Drafts folder. Nothing is written to Outlook until you send.
+
+![The confirmation card: addressing listed, hash bound to the content](docs/compose-confirm.png)
+
+Sending is two steps on purpose. **Send…** asks the host for a confirmation hash over the exact arguments — recipients, subject and the final HTML body including the quote — and shows what will leave. **Send now** returns that hash; the host recomputes it and refuses a mismatch. Editing the draft between the two steps changes the hash, so a confirmation can never outlive the content it approved. The bridge keeps its own gate underneath: `compose_send` still demands the one-time `OLK_CONFIRM` token, and the host mints it only after a human has clicked through both steps.
+
+The body is sent as `HTMLBody`, and the quote is rebuilt through a stricter path than the reading pane's: script, style, frames, forms and `on*=` handlers are removed **with their contents** before they are copied into an outbound message.
 
 ## Quick start
 

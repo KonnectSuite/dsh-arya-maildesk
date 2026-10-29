@@ -2,6 +2,20 @@
 
 This project's version narrative puts **why** before **what**. Every entry starts with the motivation.
 
+## 2.15.0 — Replies that belong to the harness, not to Outlook
+
+**Why**: the agent could draft, and the drafts were the problem. Every attempt left another item in Outlook's Drafts folder, so a thread asked about three times came back as three drafts, and the only way to see any of them was to leave the IDE and open Outlook. Contact lookup was poor enough that replying to the original mail was the reliable way to inherit its recipients. And a reply could not be written where the conversation about it was happening.
+
+**What changed**:
+- The draft is a harness object now, keyed `(account, mode, inReplyTo)`. Asking for the same reply twice reuses the same draft (`reused: true`) instead of creating a second, and the store is a `Map` in the host half — Outlook is contacted only when something is actually sent. The reuse is asserted, not assumed.
+- Two bridge actions, `compose_draft` and `compose_send`. Both assign `HTMLBody`, so the quoted original keeps its shape; `draft_mail` assigns `.Body`, which flattens it to plain text. `compose_send` keeps the existing `OLK_CONFIRM` gate, captures the addressing *before* `Send()` clears it, and deletes the orphan item if `Send()` throws.
+- `POST /maildesk/api/send` is two steps that cannot be confused: without a matching content hash it returns `needs-confirmation` with a preview and a hash over the exact arguments; only a retry carrying that hash sends. Editing the draft after the preview changes the hash.
+- The reply is two dedicated same-origin routes (draft and send), separate from the allowlisted `/maildesk/api/call`, which still cannot send.
+- Quotes go through `quoteSafe`: script, style, frames, forms and `on*=` handlers removed **with their contents**, because a quote is copied into an outbound message and the reading pane's allowlist is the wrong instrument there.
+- The panel gained Reply, Reply all, Forward and New, a compose sheet (To/Cc/Bcc, subject, body, live quote preview) and a confirm card that lists the addressing before anything leaves.
+- `read_mail` now also returns `senderSmtp`, with a note that on corporate Exchange it can be an `EX:/O=…` directory name, so callers must test it for `@` before offering it as a recipient.
+- The fixture grew `compose_draft` and `compose_send`, stores the HTML body, and a sent reply reads back through `read_mail` exactly as it was sent — asserted in `test/panel-api.test.mjs`, which is now 26 assertions.
+
 ## 2.14.0 — Mail you can read, not just list
 
 **Why**: the panel listed mail and rendered the body as one flat paragraph, so an invoice, a trip sheet and a vendor notice all looked alike, and the quote you were about to answer lost its shape before you saw it. The plain-text path also erased a distinction that matters: *this mail has no HTML* and *this mail has HTML we refuse to render* both came out as text. A Proofpoint-rewritten link could not be checked before clicking it, and a tracking pixel was never a decision the reader got to make.

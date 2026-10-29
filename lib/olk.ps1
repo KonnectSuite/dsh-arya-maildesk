@@ -1,4 +1,4 @@
-﻿# dsh-arya-maildesk Outlook COM bridge dispatcher.
+# dsh-arya-maildesk Outlook COM bridge dispatcher.
 # Invoked as: powershell -NoProfile -Command "Invoke-Expression (Get-Content -Raw <this file>)"
 # Input:  $env:OLK_ACTION = action name; arguments as ONE JSON OBJECT on STDIN
 #         (stdin transport — Windows env vars cap near 32 KB and a large mail
@@ -206,6 +206,12 @@ try {
       $it = $ns.GetItemFromID([string]$args_.entryId)
       $out.subject = [string]$it.Subject
       $out.sender = [string]$it.SenderName
+      # SenderEmailAddress is an EX:/O=... directory name on a corporate
+      # Exchange mailbox, so the caller must test it for '@' before offering it
+      # as a reply recipient; the display name is always usable for display.
+      $senderSmtp = $null
+      try { $senderSmtp = [string]$it.SenderEmailAddress } catch {}
+      $out.senderSmtp = $senderSmtp
       $out.received = if ($it.ReceivedTime) { $it.ReceivedTime.ToString('yyyy-MM-dd HH:mm') } else { $null }
       $out.to = [string]$it.To
       $out.cc = [string]$it.CC
@@ -278,6 +284,86 @@ try {
         throw
       }
       $out.sent = $true
+    }
+
+    'compose_draft' {
+      # A draft composed HERE keeps its HTML. draft_mail assigns $draft.Body
+      # (plain text), which flattens a formatted reply, so this action sets
+      # HTMLBody instead. When inReplyToEntryId is given, Outlook itself opens
+      # the reply/forward so the item joins the right conversation.
+      $item = $null
+      $mode = [string]$args_.mode
+      if (-not $mode) { $mode = 'new' }
+      if ($args_.inReplyToEntryId) {
+        $base = $ns.GetItemFromID([string]$args_.inReplyToEntryId)
+        if ($mode -eq 'replyAll') { $item = $base.ReplyAll() }
+        elseif ($mode -eq 'forward') { $item = $base.Forward() }
+        else { $item = $base.Reply() }
+      } else {
+        $item = $outlook.CreateItem(0)
+      }
+      if ($args_.to) { $item.To = [string]$args_.to }
+      if ($args_.cc) { $item.CC = [string]$args_.cc }
+      if ($args_.bcc) { $item.BCC = [string]$args_.bcc }
+      if ($args_.subject) { $item.Subject = [string]$args_.subject }
+      if ($null -ne $args_.htmlBody -and [string]$args_.htmlBody -ne '') {
+        $item.HTMLBody = [string]$args_.htmlBody
+      }
+      if ($args_.attachments) {
+        foreach ($p_ in @($args_.attachments)) {
+          if (-not (Test-Path -LiteralPath $p_)) { throw "attachment not found: $p_" }
+          $null = $item.Attachments.Add($p_)
+        }
+      }
+      $item.Save()
+      $out.draftEntryId = $item.EntryID
+      $out.mode = $mode
+      $out.message = 'Draft saved to the Drafts folder.'
+    }
+
+    'compose_send' {
+      # Same HUMAN-APPROVAL GATE as send_draft: index.js mints the token only
+      # after a human allowed this exact content. Fail closed.
+      if (-not $env:OLK_CONFIRM -or $env:OLK_CONFIRM.Length -lt 16) {
+        throw 'SEND BLOCKED: no human confirmation token (OLK_CONFIRM) — sending requires an approved in-session confirmation first.'
+      }
+      $item = $null
+      $mode = [string]$args_.mode
+      if (-not $mode) { $mode = 'new' }
+      if ($args_.inReplyToEntryId) {
+        $base = $ns.GetItemFromID([string]$args_.inReplyToEntryId)
+        if ($mode -eq 'replyAll') { $item = $base.ReplyAll() }
+        elseif ($mode -eq 'forward') { $item = $base.Forward() }
+        else { $item = $base.Reply() }
+      } else {
+        $item = $outlook.CreateItem(0)
+      }
+      if ($args_.to) { $item.To = [string]$args_.to }
+      if ($args_.cc) { $item.CC = [string]$args_.cc }
+      if ($args_.bcc) { $item.BCC = [string]$args_.bcc }
+      if ($args_.subject) { $item.Subject = [string]$args_.subject }
+      if ($null -ne $args_.htmlBody -and [string]$args_.htmlBody -ne '') {
+        $item.HTMLBody = [string]$args_.htmlBody
+      }
+      if ($args_.attachments) {
+        foreach ($p_ in @($args_.attachments)) {
+          if (-not (Test-Path -LiteralPath $p_)) { throw "attachment not found: $p_" }
+          $null = $item.Attachments.Add($p_)
+        }
+      }
+      # Capture before Send(): Outlook clears these once the item is in Sent Items.
+      $out.subject = [string]$item.Subject
+      $out.to = [string]$item.To
+      $out.cc = [string]$item.CC
+      $out.bcc = [string]$item.BCC
+      try {
+        $item.Send()
+      } catch {
+        try { $item.Delete() } catch { /* best effort */ }
+        throw
+      }
+      $out.sent = $true
+      $out.mode = $mode
     }
 
     'calendar_query' {

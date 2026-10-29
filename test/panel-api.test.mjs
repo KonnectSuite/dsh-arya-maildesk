@@ -33,8 +33,12 @@ plugin.apply(ctx)
 
 const call = routes.get('/maildesk/api/call')
 const health = routes.get('/maildesk/api/health')
+const draftRoute = routes.get('/maildesk/api/draft')
+const sendRoute = routes.get('/maildesk/api/send')
 assert.ok(typeof call === 'function', 'call route registered')
 assert.ok(typeof health === 'function', 'health route registered')
+assert.ok(typeof draftRoute === 'function', 'draft route registered')
+assert.ok(typeof sendRoute === 'function', 'send route registered')
 
 const HOST = '127.0.0.1:57019'
 
@@ -62,7 +66,16 @@ async function post(action, args) {
   return { status: res.statusCode, ...parsed }
 }
 
+/** Hit any of the panel's routes, not just the allowlisted call route. */
+async function hit(path, body) {
+  const handler = routes.get(path)
+  const { req, res } = request('POST', body)
+  await handler(req, res)
+  return { status: res.statusCode, ...JSON.parse(res.payload || '{}') }
+}
+
 let passed = 0
+let draftId = ''
 async function check(name, fn) {
   try {
     await fn()
@@ -242,6 +255,100 @@ await check('a malformed body is refused', async () => {
   await call(req, res)
   assert.equal(res.statusCode, 400)
   assert.equal(JSON.parse(res.payload).ok, false)
+})
+
+// ---- compose flow (M3) --------------------------------------------------
+await check('a reply draft is created once and reused for the same thread', async () => {
+  const list = await post('list_mail', { folder: 'Inbox', limit: 1 })
+  const mail = list.result.mails[0]
+  const first = await hit('/maildesk/api/draft', { op: 'open', mode: 'reply', inReplyTo: mail.entryId })
+  assert.equal(first.ok, true)
+  assert.equal(first.reused, false)
+  assert.ok(first.draft.subject.toLowerCase().startsWith('re: '), 'subject carries the reply prefix')
+  assert.ok(first.draft.quoteHtml.includes('<blockquote>'), 'the quote is carried')
+  assert.ok(!/<script/i.test(first.draft.quoteHtml), 'the quote must not carry a script')
+  assert.ok(!/\son[a-z]+\s*=/i.test(first.draft.quoteHtml), 'the quote must not carry an event handler')
+  const again = await hit('/maildesk/api/draft', { op: 'open', mode: 'reply', inReplyTo: mail.entryId })
+  assert.equal(again.reused, true, 're-opening a reply reuses the draft instead of stacking another')
+  assert.equal(again.draft.id, first.draft.id)
+  draftId = first.draft.id
+})
+
+await check('a draft patch is stored, and a list returns it', async () => {
+  const r = await hit('/maildesk/api/draft', {
+    op: 'save', draftId,
+    patch: {
+      to: [{ name: 'Melissa Chen', email: 'melissa@example.com' }],
+      subject: 'Re: Line 4 retrofit',
+      bodyHtml: '<p>Yes, Thursday works.</p>',
+    },
+  })
+  assert.equal(r.ok, true)
+  assert.equal(r.draft.to.length, 1)
+  assert.equal(r.draft.to[0].email, 'melissa@example.com')
+  const back = await hit('/maildesk/api/draft', { op: 'list' })
+  assert.equal(back.drafts.length, 1)
+  assert.equal(back.drafts[0].bodyHtml, '<p>Yes, Thursday works.</p>')
+})
+
+await check('send refuses until it is given the hash of the content shown', async () => {
+  const r = await hit('/maildesk/api/send', { draftId })
+  assert.equal(r.ok, false)
+  assert.equal(r.result.status, 'needs-confirmation')
+  assert.equal(r.result.hash.length, 64)
+  assert.ok(r.result.preview.htmlBody.includes('Thursday works'), 'the preview is the exact content that would be sent')
+  const sent = await post('list_mail', { folder: 'Sent Items', limit: 200 })
+  assert.ok(!sent.result.mails.some((m) => m.subject === 'Re: Line 4 retrofit'), 'nothing may leave yet')
+})
+
+await check('send refuses a hash that does not match the draft', async () => {
+  const r = await hit('/maildesk/api/send', { draftId, confirmHash: 'f'.repeat(64) })
+  assert.equal(r.result.status, 'needs-confirmation')
+})
+
+await check('send with the matching hash sends it and consumes the draft', async () => {
+  const pre = await hit('/maildesk/api/send', { draftId })
+  const r = await hit('/maildesk/api/send', { draftId, confirmHash: pre.result.hash })
+  assert.equal(r.ok, true)
+  assert.equal(r.result.sent, true)
+  const sent = await post('list_mail', { folder: 'Sent Items', limit: 200 })
+  assert.ok(sent.result.mails.some((m) => m.subject === 'Re: Line 4 retrofit'), 'the sent mail is in Sent Items')
+  const left = await hit('/maildesk/api/draft', { op: 'list' })
+  assert.equal(left.drafts.length, 0, 'a sent draft is consumed, not left to pile up')
+})
+
+await check('a sent reply reads back as the very HTML that was sent', async () => {
+  const sentList = await hit('/maildesk/api/call', { action: 'list_mail', args: { folder: 'Sent Items', limit: 5 } })
+  const top = sentList.result.mails[0]
+  assert.ok(top !== undefined, 'the reply landed in Sent Items')
+  const read = await hit('/maildesk/api/call', { action: 'read_mail', args: { entryId: top.entryId, format: 'html' } })
+  assert.ok(typeof read.result.htmlBody === 'string', 'the sent copy carries an HTML body')
+  assert.ok(read.result.htmlBody.indexOf('maildesk-quote') !== -1, 'the quoted original is still under the reply')
+  assert.equal(read.result.htmlBody.indexOf('<script'), -1, 'the outbound quote never carries the original script')
+})
+
+await check('a consumed draft cannot be sent twice', async () => {
+  const r = await hit('/maildesk/api/send', { draftId })
+  assert.equal(r.result.status, 'error')
+})
+
+await check('discard drops a draft without sending it', async () => {
+  const opened = await hit('/maildesk/api/draft', { op: 'open', mode: 'new' })
+  assert.equal(opened.ok, true)
+  const dropped = await hit('/maildesk/api/draft', { op: 'discard', draftId: opened.draft.id })
+  assert.equal(dropped.ok, true)
+  assert.equal(dropped.discarded, true)
+  const left = await hit('/maildesk/api/draft', { op: 'list' })
+  assert.equal(left.drafts.length, 0)
+})
+
+await check('the compose routes refuse a cross-origin caller', async () => {
+  for (const path of ['/maildesk/api/draft', '/maildesk/api/send']) {
+    const handler = routes.get(path)
+    const { req, res } = request('POST', { op: 'list' }, { origin: 'http://evil.example' })
+    await handler(req, res)
+    assert.equal(res.statusCode, 403, path + ' must refuse a foreign origin')
+  }
 })
 
 console.log((passed) + ' assertions passed' + (process.exitCode ? ' — with failures' : ''))

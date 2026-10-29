@@ -54,6 +54,42 @@ window.__ModuleLoader__.load({
       return result
     }
 
+    /** POST to one of the compose routes; resolves the parsed JSON either way. */
+    async function api(path, body) {
+      try {
+        const res = await fetch(path, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify(body || {}),
+        })
+        const data = await res.json().catch(() => null)
+        if (data === null || typeof data !== 'object') return { ok: false, error: 'HTTP ' + res.status }
+        return data
+      } catch (error) {
+        return { ok: false, error: (error && error.message) || 'network error' }
+      }
+    }
+
+    /** "Name <a@b>; c@d" ⇄ [{name,email}]. Tolerant: a bare address is enough. */
+    function parsePeople(text) {
+      return String(text || '').split(/[;,]/).map((x) => x.trim()).filter(Boolean).map((x) => {
+        const m = /^(.*)<([^>]+)>\s*$/.exec(x)
+        if (m) return { name: m[1].trim().replace(/^["']|["']$/g, ''), email: m[2].trim() }
+        return { name: '', email: x }
+      }).filter((p) => p.email.includes('@'))
+    }
+    function formatPeople(list) {
+      return (Array.isArray(list) ? list : [])
+        .filter((p) => p && p.email)
+        .map((p) => (p.name ? p.name + ' <' + p.email + '>' : p.email))
+        .join('; ')
+    }
+    /** The body box is plain text; each paragraph becomes a <p> on save. */
+    function textToHtml(text) {
+      const blocks = String(text || '').split(/\n{2,}/)
+      return blocks.map((b) => '<p>' + b.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/\n/g, '<br>') + '</p>').join('')
+    }
+
     function ensureStyles() {
       if (document.head === null) return null
       if (document.getElementById('dsh-arya-maildesk-styles') !== null) return null
@@ -76,9 +112,26 @@ window.__ModuleLoader__.load({
         '.md-mailrow-btn:hover:not(:disabled),.md-mailrow-btn:focus-visible:not(:disabled){background:var(--dsw-alias-interactive-bg-hover);outline:none}',
         '.md-mailrow-btn:disabled{cursor:default;opacity:.55}',
         '.md-toast{position:fixed;z-index:70;left:50%;bottom:28px;transform:translateX(-50%);max-width:min(70vw,520px);padding:8px 14px;border-radius:10px;background:var(--dsh-bg-elevated,#fff);color:var(--dsw-alias-label-primary,#222);box-shadow:0 8px 24px rgba(0,0,0,.18);font-size:12.5px;line-height:1.5;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}',
+        '.md-compose{position:absolute;inset:0;z-index:6;display:flex;flex-direction:column;background:var(--dsh-bg,#fff)}',
+        '.md-compose-h{display:flex;align-items:center;gap:8px;padding:10px 14px;border-bottom:1px solid var(--dsw-alias-border-subtle,#eee);font-weight:600;font-size:13.5px;flex:none}',
+        '.md-compose-body{flex:1 1 auto;min-height:0;overflow:auto;padding:12px 14px;display:flex;flex-direction:column;gap:10px}',
+        '.md-field{display:flex;gap:8px;align-items:flex-start}',
+        '.md-field>label{flex:none;width:52px;padding-top:6px;font-size:12px;opacity:.7}',
+        '.md-input,.md-textarea{flex:1 1 auto;min-width:0;box-sizing:border-box;padding:6px 9px;border-radius:7px;border:1px solid var(--dsw-alias-border-subtle,#dcdcdc);background:var(--dsh-bg,#fff);color:inherit;font:12.5px/1.5 inherit}',
+        '.md-textarea{min-height:180px;resize:vertical;font-family:inherit}',
+        '.md-compose-body textarea.md-textarea{flex:1 1 auto}',
+        '.md-quote{margin-top:2px;padding:8px 10px;border-left:3px solid var(--dsw-alias-border-subtle,#ddd);opacity:.75;max-height:150px;overflow:auto;font-size:12px}',
+        '.md-compose-actions{display:flex;gap:8px;align-items:center;padding:10px 14px;border-top:1px solid var(--dsw-alias-border-subtle,#eee);flex:none;flex-wrap:wrap}',
+        '.md-link{background:none;border:0;color:var(--dsw-alias-label-accent,#2b6cb0);cursor:pointer;font:12px inherit;padding:0 4px}',
+        '.md-modal{position:absolute;inset:0;z-index:8;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.34)}',
+        '.md-modal-card{width:min(560px,92%);max-height:80%;overflow:auto;background:var(--dsh-bg,#fff);border-radius:12px;box-shadow:0 18px 48px rgba(0,0,0,.28);padding:16px 18px}',
+        '.md-modal-card h3{margin:0 0 10px;font-size:14px}',
+        '.md-confirm-row{display:flex;gap:8px;font-size:12.5px;padding:3px 0;border-bottom:1px dashed var(--dsw-alias-border-subtle,#eee)}',
+        '.md-confirm-row b{flex:none;width:64px;opacity:.65;font-weight:600}',
+        '.md-confirm-body{margin:10px 0 0;padding:10px;border-radius:8px;background:var(--dsw-alias-bg-subtle,#f7f7f7);white-space:pre-wrap;font-size:12.5px;max-height:220px;overflow:auto}',
 
         /* --- main panel --- */
-        '.md{display:flex;flex-direction:column;height:100%;min-height:0;font:13px/1.45 system-ui,-apple-system,"Segoe UI",sans-serif;color:var(--dsw-alias-label-primary,#1b1b1b);background:var(--dsh-bg,#fff)}',
+        '.md{position:relative;display:flex;flex-direction:column;height:100%;min-height:0;font:13px/1.45 system-ui,-apple-system,"Segoe UI",sans-serif;color:var(--dsw-alias-label-primary,#1b1b1b);background:var(--dsh-bg,#fff)}',
         '.md *{box-sizing:border-box}',
         '.md-top{display:flex;align-items:center;gap:10px;padding:10px 14px;border-bottom:1px solid var(--dsw-alias-border-subtle,#e6e6e6);flex:none}',
         '.md-title{font-size:14px;font-weight:600;letter-spacing:.1px}',
@@ -462,6 +515,10 @@ window.__ModuleLoader__.load({
       const [limit, setLimit] = React.useState(100)
       const [provider, setProvider] = React.useState('com')
       const [moveTo, setMoveTo] = React.useState('')
+      // The composer is a draft the HOST owns (see index.js compose routes):
+      // this component only edits it and asks for a send. Nothing here creates
+      // an Outlook item, so re-opening a reply cannot stack a second draft.
+      const [compose, setCompose] = React.useState(null)
       const anchor = React.useRef(null)
       const rowsRef = React.useRef(null)
 
@@ -703,7 +760,105 @@ window.__ModuleLoader__.load({
         }
       }
 
+      /* ---- composer ------------------------------------------------- */
+      const DRAFT_URL = '/maildesk/api/draft'
+      const SEND_URL = '/maildesk/api/send'
+
+      const openCompose = async (mode) => {
+        const ids = targetIds()
+        const inReplyTo = ids.length === 1 ? ids[0] : null
+        if (mode !== 'new' && inReplyTo === null) return
+        setCompose({ status: 'loading' })
+        const res = await api(DRAFT_URL, { op: 'open', mode, inReplyTo: inReplyTo || undefined })
+        if (res.ok !== true) {
+          setCompose({ status: 'error', error: (res.error || 'could not open a draft') + (res.result && res.result.error ? ': ' + res.result.error : '') })
+          return
+        }
+        const d = res.draft
+        setCompose({
+          status: 'edit',
+          draft: d,
+          reused: res.reused === true,
+          toText: formatPeople(d.to),
+          ccText: formatPeople(d.cc),
+          bccText: formatPeople(d.bcc),
+          subject: d.subject || '',
+          bodyText: '',
+          showCc: (d.cc || []).length > 0,
+          showBcc: false,
+          busy: '',
+          error: '',
+          confirm: null,
+        })
+      }
+
+      /** Save what is on screen into the host draft, then ask to send. The
+       *  host answers `needs-confirmation` with the hash of exactly this
+       *  content; only a second call carrying that hash sends anything. */
+      const doSend = async () => {
+        if (compose === null || compose.status !== 'edit') return
+        const c = compose
+        const patch = {
+          to: parsePeople(c.toText),
+          cc: parsePeople(c.ccText),
+          bcc: parsePeople(c.bccText),
+          subject: c.subject,
+          bodyHtml: textToHtml(c.bodyText),
+        }
+        setCompose({ ...c, busy: 'save', error: '' })
+        const saved = await api(DRAFT_URL, { op: 'save', draftId: c.draft.id, patch })
+        if (saved.ok !== true) {
+          setCompose({ ...c, busy: '', error: saved.error || 'could not save the draft' })
+          return
+        }
+        const first = await api(SEND_URL, { draftId: c.draft.id })
+        const result = first.result || {}
+        if (first.ok === true) {
+          setCompose(null)
+          announce('Sent · ' + (result.subject || saved.draft.subject || ''))
+          void refresh()
+          return
+        }
+        if (result.status === 'needs-confirmation') {
+          setCompose({ ...c, draft: saved.draft, busy: '', confirm: { hash: result.hash, preview: result.preview } })
+          return
+        }
+        setCompose({ ...c, draft: saved.draft, busy: '', error: result.error || first.error || 'send failed' })
+      }
+
+      const confirmSend = async () => {
+        const c = compose
+        if (c === null || c.confirm === null) return
+        setCompose({ ...c, busy: 'send' })
+        const res = await api(SEND_URL, { draftId: c.draft.id, confirmHash: c.confirm.hash })
+        const result = res.result || {}
+        if (res.ok === true) {
+          setCompose(null)
+          announce('Sent · ' + (result.subject || c.draft.subject || ''))
+          void refresh()
+          return
+        }
+        setCompose({
+          ...c,
+          busy: '',
+          confirm: null,
+          error: result.status === 'needs-confirmation'
+            ? 'The draft changed while you were confirming — review it and send again.'
+            : (result.error || res.error || 'send failed'),
+        })
+      }
+
+      const discardDraft = async () => {
+        const c = compose
+        if (c === null || c.draft === undefined) { setCompose(null); return }
+        setCompose({ ...c, busy: 'discard' })
+        await api(DRAFT_URL, { op: 'discard', draftId: c.draft.id })
+        setCompose(null)
+        announce('Draft discarded')
+      }
+
       const onKeyDown = (ev) => {
+        if (compose !== null) { if (ev.key === 'Escape') { ev.preventDefault(); setCompose(null) } return }
         if (ev.key === 'Delete' && !ev.repeat) { ev.preventDefault(); void doDelete(); return }
         if (ev.key === 'u' || ev.key === 'U') { void doMark(true); return }
         if (ev.key === 'R' && ev.ctrlKey) { ev.preventDefault(); void refresh(); return }
@@ -767,6 +922,9 @@ window.__ModuleLoader__.load({
           (folders || []).map((f) => h('option', { key: f.entryId, value: f.entryId }, '  '.repeat(f.depth || 0) + f.name))),
         h('button', { className: 'md-btn', type: 'button', disabled: busy !== '' || moveTo === '' || selectionCount === 0, onClick: () => void doMove() }, 'Go'),
         h('button', { className: 'md-btn', type: 'button', disabled: busy !== '' || selectionCount === 0, onClick: () => void doOpenInOutlook() }, 'Open in Outlook'),
+        h('button', { className: 'md-btn', type: 'button', disabled: busy !== '' || selectionCount !== 1, onClick: () => void openCompose('reply') }, 'Reply'),
+        h('button', { className: 'md-btn', type: 'button', disabled: busy !== '' || selectionCount !== 1, onClick: () => void openCompose('replyAll') }, 'Reply all'),
+        h('button', { className: 'md-btn', type: 'button', disabled: busy !== '' || selectionCount !== 1, onClick: () => void openCompose('forward') }, 'Forward'),
         h('span', { className: 'md-selinfo' }, selectionCount > 0 ? selectionCount + ' selected' : 'no selection'))
 
       const rows = (() => {
@@ -829,6 +987,77 @@ window.__ModuleLoader__.load({
               : h('div', { className: 'md-text' }, openMail.body || '(no text body)')))
       })()
 
+      const composeView = (() => {
+        if (compose === null) return null
+        if (compose.status === 'loading') {
+          return h('div', { className: 'md-compose' }, h('div', { className: 'md-compose-h' }, 'Opening draft…'))
+        }
+        if (compose.status === 'error') {
+          return h('div', { className: 'md-compose' },
+            h('div', { className: 'md-compose-h' }, 'Draft could not be opened'),
+            h('div', { className: 'md-compose-body' }, h('div', { className: 'md-err', role: 'alert' }, compose.error)),
+            h('div', { className: 'md-compose-actions' },
+              h('button', { className: 'md-btn', type: 'button', onClick: () => setCompose(null) }, 'Close')))
+        }
+        const c = compose
+        const title = c.draft.mode === 'replyAll' ? 'Reply all' : c.draft.mode === 'reply' ? 'Reply'
+          : c.draft.mode === 'forward' ? 'Forward' : 'New message'
+        const field = (label, value, onChange, placeholder) => h('div', { className: 'md-field' },
+          h('label', null, label),
+          h('input', {
+            className: 'md-input', value,
+            placeholder: placeholder === undefined ? 'Name <address>; another@example.com' : placeholder,
+            onChange: (ev) => onChange(ev.target.value),
+          }))
+        return h('div', { className: 'md-compose', role: 'dialog', 'aria-label': title },
+          h('div', { className: 'md-compose-h' }, title,
+            c.reused ? h('span', { className: 'md-pill', title: 'This thread already had a draft; it was reused instead of creating another' }, 'draft kept') : null,
+            h('span', { className: 'md-spacer' }),
+            c.busy !== '' ? h('span', { className: 'md-selinfo' }, c.busy === 'send' ? 'Sending…' : c.busy === 'save' ? 'Saving…' : 'Discarding…') : null),
+          h('div', { className: 'md-compose-body' },
+            field('To', c.toText, (v) => setCompose({ ...c, toText: v })),
+            c.showCc
+              ? field('Cc', c.ccText, (v) => setCompose({ ...c, ccText: v }))
+              : h('div', null,
+                  h('button', { className: 'md-link', type: 'button', onClick: () => setCompose({ ...c, showCc: true }) }, 'Add Cc'),
+                  c.showBcc ? null : h('button', { className: 'md-link', type: 'button', onClick: () => setCompose({ ...c, showBcc: true }) }, 'Add Bcc')),
+            c.showBcc ? field('Bcc', c.bccText, (v) => setCompose({ ...c, bccText: v })) : null,
+            field('Subject', c.subject, (v) => setCompose({ ...c, subject: v }), ''),
+            h('div', { className: 'md-field' },
+              h('label', null, 'Body'),
+              h('textarea', {
+                className: 'md-textarea',
+                value: c.bodyText,
+                placeholder: 'Write the reply. It is sent as HTML, with the quoted mail appended below it.',
+                onChange: (ev) => setCompose({ ...c, bodyText: ev.target.value }),
+              })),
+            c.draft.quoteHtml
+              ? h('div', { className: 'md-quote' },
+                  h('div', { style: { opacity: .7, marginBottom: 4 } }, 'Quoted below in the sent message:'),
+                  h('div', { dangerouslySetInnerHTML: { __html: sanitizeEmailHtml(c.draft.quoteHtml) } }))
+              : null,
+            c.error !== '' ? h('div', { className: 'md-err', role: 'alert' }, c.error) : null),
+          h('div', { className: 'md-compose-actions' },
+            h('button', { className: 'md-btn primary', type: 'button', disabled: c.busy !== '' || c.toText.trim() === '', onClick: () => void doSend() }, 'Send…'),
+            h('button', { className: 'md-btn', type: 'button', disabled: c.busy !== '', onClick: () => void discardDraft() }, 'Discard'),
+            h('span', { className: 'md-spacer' }),
+            h('button', { className: 'md-btn', type: 'button', disabled: c.busy !== '', onClick: () => setCompose(null) }, 'Close'),
+            h('span', { className: 'md-selinfo' }, 'Nothing leaves until you confirm the exact content.')),
+          c.confirm !== null
+            ? h('div', { className: 'md-modal' },
+                h('div', { className: 'md-modal-card', role: 'alertdialog', 'aria-label': 'Confirm send' },
+                  h('h3', null, 'Send this?'),
+                  h('div', { className: 'md-confirm-row' }, h('b', null, 'To'), h('span', null, c.confirm.preview.to || '(none)')),
+                  c.confirm.preview.cc ? h('div', { className: 'md-confirm-row' }, h('b', null, 'Cc'), h('span', null, c.confirm.preview.cc)) : null,
+                  c.confirm.preview.bcc ? h('div', { className: 'md-confirm-row' }, h('b', null, 'Bcc'), h('span', null, c.confirm.preview.bcc)) : null,
+                  h('div', { className: 'md-confirm-row' }, h('b', null, 'Subject'), h('span', null, c.confirm.preview.subject || '(no subject)')),
+                  h('div', { className: 'md-confirm-body' }, 'The message is sent as HTML and includes the quoted mail below your text. Only this exact content is sent — editing it afterwards requires a new confirmation.'),
+                  h('div', { className: 'md-compose-actions', style: { borderTop: 0, padding: '12px 0 0' } },
+                    h('button', { className: 'md-btn primary', type: 'button', disabled: c.busy !== '', onClick: () => void confirmSend() }, c.busy === 'send' ? 'Sending…' : 'Send now'),
+                    h('button', { className: 'md-btn', type: 'button', disabled: c.busy !== '', onClick: () => setCompose({ ...c, confirm: null }) }, 'Back'))))
+            : null)
+      })()
+
       return h('div', { className: 'md', onKeyDown, tabIndex: -1 },
         h('div', { className: 'md-top' },
           h('span', { className: 'md-title' }, 'Mail'),
@@ -848,6 +1077,7 @@ window.__ModuleLoader__.load({
             h('option', { value: '50' }, '50'),
             h('option', { value: '100' }, '100'),
             h('option', { value: '200' }, '200')),
+          h('button', { className: 'md-btn', type: 'button', disabled: busy !== '', onClick: () => void openCompose('new') }, 'New'),
           h('button', { className: 'md-btn', type: 'button', disabled: busy !== '', onClick: () => void refresh() }, busy === 'refresh' ? 'Refreshing…' : 'Refresh')),
         error !== '' && listState === 'error'
           ? h('div', { className: 'md-err', role: 'alert' },
@@ -869,6 +1099,7 @@ window.__ModuleLoader__.load({
                 ? h('button', { className: 'md-btn', type: 'button', disabled: busy !== '', onClick: () => void loadMore() }, busy === 'more' ? 'Loading…' : 'Load more')
                 : h('span', { style: { opacity: .6 } }, 'end of folder'))),
           h('div', { className: 'md-read' }, reader)),
+        composeView,
         toast !== null ? h('div', { className: 'md-toast', style: toast.isError ? { color: 'var(--dsw-alias-label-danger,#e5484d)' } : undefined, role: 'status' }, toast.text) : null)
     }
 

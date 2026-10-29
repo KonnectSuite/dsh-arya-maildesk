@@ -375,21 +375,27 @@ function fixtureCall(action, args = {}) {
       for (const f of fixture.folders) {
         const m = f.items.find((x) => x.entryId === args.entryId)
         if (m) {
-          const out = { subject: m.subject, sender: m.sender, received: m.received, to: m.to, cc: m.cc, bcc: m.bcc, body: m.body, attachments: m.attachments, unread: m.unread }
+          const out = { subject: m.subject, sender: m.sender, senderSmtp: m.senderSmtp, received: m.received, to: m.to, cc: m.cc, bcc: m.bcc, body: m.body, attachments: m.attachments, unread: m.unread }
           if (args.format === 'html') {
-            // Deliberately hostile fixture HTML: a tracking pixel, a script, an
-            // onclick, a javascript: link and a Proofpoint-wrapped link. The
-            // renderer must drop or rewrite every one of them.
-            const paras = String(m.body).split('\n').filter(Boolean).map((line) => '<p>' + escapeHtml(line) + '</p>').join('')
-            out.htmlBody = '<html><body><div style="font-family: Calibri">' + paras
-              + '<p style="color:#666">-- <br>' + escapeHtml(m.sender) + ' | Fromm Connect</p>'
-              + '<table border="1" cellpadding="4"><tr><th>PO</th><th>Qty</th></tr><tr><td>45-88213</td><td>12</td></tr></table>'
-              + '<p><a href="https://urldefense.proofpoint.com/v2/url?u=https%3A%2F%2Frockwellautomation%2Ecom%2Fsupport&d=DwMF&c=abc&r=def&m=ghi&s=jkl&e=">Track this order</a></p>'
-              + '<p><a href="javascript:alert(1)">unsubscribe</a></p>'
-              + '<img src="https://tracker.example/pixel.gif?id=1" width="1" height="1">'
-              + '<script>window.__pwned = true</script>'
-              + '<div onclick="window.__clicked = true">click me</div>'
-              + '</div></body></html>'
+            if (typeof m.htmlBody === 'string' && m.htmlBody !== '') {
+              // A message we composed ourselves: return exactly what was sent, so
+              // the reading pane is checked against the real body, not a mock.
+              out.htmlBody = m.htmlBody
+            } else {
+              // Deliberately hostile fixture HTML: a tracking pixel, a script, an
+              // onclick, a javascript: link and a Proofpoint-wrapped link. The
+              // renderer must drop or rewrite every one of them.
+              const paras = String(m.body).split('\n').filter(Boolean).map((line) => '<p>' + escapeHtml(line) + '</p>').join('')
+              out.htmlBody = '<html><body><div style="font-family: Calibri">' + paras
+                + '<p style="color:#666">-- <br>' + escapeHtml(m.sender) + ' | Fromm Connect</p>'
+                + '<table border="1" cellpadding="4"><tr><th>PO</th><th>Qty</th></tr><tr><td>45-88213</td><td>12</td></tr></table>'
+                + '<p><a href="https://urldefense.proofpoint.com/v2/url?u=https%3A%2F%2Frockwellautomation%2Ecom%2Fsupport&d=DwMF&c=abc&r=def&m=ghi&s=jkl&e=">Track this order</a></p>'
+                + '<p><a href="javascript:alert(1)">unsubscribe</a></p>'
+                + '<img src="https://tracker.example/pixel.gif?id=1" width="1" height="1">'
+                + '<script>window.__pwned = true</script>'
+                + '<div onclick="window.__clicked = true">click me</div>'
+                + '</div></body></html>'
+            }
             out.htmlTruncated = false
           }
           return ok(out)
@@ -437,6 +443,33 @@ function fixtureCall(action, args = {}) {
         }
       }
       return ok({ deleted: deletedIds.length, recoverable: true, deletedEntryIds: deletedIds, failed: [] })
+    }
+    case 'compose_draft': {
+      const stamp = () => new Date().toISOString().slice(0, 16).replace('T', ' ')
+      const folder = fixture.folders.find((x) => x.name === 'Drafts') || fixture.folders[0]
+      const entryId = ('draft-' + Date.now().toString(36)).padEnd(90, 'Q')
+      folder.items.unshift({
+        entryId, subject: String(args.subject || '(no subject)'), sender: 'K Phung',
+        senderSmtp: 'kphung@frommconnect.com', received: stamp(), unread: false, hasAttach: false,
+        preview: '', to: String(args.to || ''), cc: String(args.cc || ''), bcc: '', body: String(args.htmlBody || ''), htmlBody: String(args.htmlBody || ''), attachments: [],
+      })
+      return ok({ draftEntryId: entryId, mode: String(args.mode || 'new'), message: 'Draft saved to the Drafts folder.' })
+    }
+    case 'compose_send': {
+      const stamp = () => new Date().toISOString().slice(0, 16).replace('T', ' ')
+      const folder = fixture.folders.find((x) => x.name === 'Sent Items') || fixture.folders[0]
+      const entryId = ('sent-' + Date.now().toString(36)).padEnd(90, 'Q')
+      fixture.sent = fixture.sent || []
+      fixture.sent.push({
+        entryId, to: String(args.to || ''), cc: String(args.cc || ''), subject: String(args.subject || ''),
+        htmlBody: String(args.htmlBody || ''), mode: String(args.mode || 'new'), inReplyToEntryId: String(args.inReplyToEntryId || ''),
+      })
+      folder.items.unshift({
+        entryId, subject: String(args.subject || '(no subject)'), sender: 'K Phung',
+        senderSmtp: 'kphung@frommconnect.com', received: stamp(), unread: false, hasAttach: false,
+        preview: '', to: String(args.to || ''), cc: String(args.cc || ''), bcc: '', body: String(args.htmlBody || ''), htmlBody: String(args.htmlBody || ''), attachments: [],
+      })
+      return ok({ sent: true, subject: String(args.subject || ''), to: String(args.to || ''), mode: String(args.mode || 'new') })
     }
     case 'open_mail':
       return ok({ opened: true, subject: '(fixture)' })
@@ -710,6 +743,217 @@ export function apply(ctx) {
         }
       },
     }), 'dsh-arya-maildesk: panel call route')
+
+    // ---- compose routes (M3) -------------------------------------------
+    // A draft is HARNESS DATA keyed by (account, mode, thread), so opening a
+    // reply twice returns the draft you already wrote instead of stacking a
+    // second item in Outlook's Drafts folder. Outlook is the transport at send
+    // time and the source of truth for received mail — never where the draft
+    // lives. "Save to Outlook Drafts" is the explicit escape hatch, and it
+    // updates that same item on every later save.
+    const drafts = new Map()
+    const draftKeyOf = (account, mode, thread) => [account || 'default', mode || 'new', thread || ''].join('|')
+    const asList = (v) => (Array.isArray(v) ? v : [])
+    const publicDraft = (d) => ({
+      id: d.id, mode: d.mode, inReplyTo: d.inReplyTo, inReplyToSubject: d.inReplyToSubject,
+      to: d.to, cc: d.cc, bcc: d.bcc, subject: d.subject, bodyHtml: d.bodyHtml,
+      quoteHtml: d.quoteHtml, outlookEntryId: d.outlookEntryId,
+      createdAt: d.createdAt, updatedAt: d.updatedAt,
+    })
+    const findDraft = (id) => {
+      for (const d of drafts.values()) if (d.id === id) return d
+      return null
+    }
+    const parseAddrList = (text) => String(text || '').split(';').map((x) => x.trim()).filter(Boolean).map((x) => {
+      const m = /^(.*)<([^>]+)>$/.exec(x)
+      if (m) return { name: m[1].trim().replace(/^["']|["']$/g, ''), email: m[2].trim() }
+      return { name: '', email: x }
+    })
+    const formatAddrList = (list) => asList(list)
+      .map((a) => (a && a.email ? (a.name ? '"' + a.name + '" <' + a.email + '>' : a.email) : ''))
+      .filter(Boolean).join('; ')
+    /** A quote is copied into an OUTBOUND message, so the reading pane's
+     *  allowlist is not enough here: the active parts are stripped before the
+     *  text can leave the machine. */
+    function quoteSafe(html) {
+      return String(html || '')
+        .replace(/<(script|style|iframe|object|embed|link|meta|form|title)\b[\s\S]*?<\/\1>/gi, '')
+        .replace(/<(script|style|iframe|object|embed|link|meta|form|title|img|input|button)\b[^>]*>/gi, '')
+        .replace(/\son[a-z]+\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]+)/gi, '')
+        .replace(/(href|src)\s*=\s*(?:"|')?\s*javascript:[^"'>\s]*(?:"|')?/gi, '')
+    }
+    async function openDraft(args) {
+      const mode = ['new', 'reply', 'replyAll', 'forward'].includes(String(args.mode)) ? String(args.mode) : 'new'
+      const thread = args.inReplyTo ? String(args.inReplyTo) : ''
+      const account = String(args.account || '')
+      const key = draftKeyOf(account, mode, thread)
+      const hit = drafts.get(key)
+      if (hit) return { draft: publicDraft(hit), reused: true }
+      const draft = {
+        id: 'draft-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 8),
+        account, mode, inReplyTo: thread, inReplyToSubject: '', to: [], cc: [], bcc: [],
+        subject: '', bodyHtml: '', quoteHtml: '', outlookEntryId: null,
+        createdAt: Date.now(), updatedAt: Date.now(),
+      }
+      if (thread !== '') {
+        let src = null
+        try { src = await panelCall('read_mail', { entryId: thread, maxChars: 20000, format: 'html' }) } catch { src = null }
+        if (src && src.status === 'ok') {
+          draft.inReplyToSubject = String(src.subject || '')
+          const prefix = mode === 'forward' ? 'Fwd: ' : 'Re: '
+          const base = draft.inReplyToSubject
+          draft.subject = base.toLowerCase().startsWith(prefix.toLowerCase()) ? base : prefix + base
+          // SenderEmailAddress is a usable SMTP address on some mailboxes and an
+          // EX:/O=... directory name on a corporate Exchange one. Only an
+          // address can become a recipient chip; without one the reply is left
+          // for Outlook's own Reply() to address, which is why an empty To is
+          // allowed for a reply (see sendArgs/sendDraft).
+          const senderSmtp = String(src.senderSmtp || '')
+          const sender = senderSmtp.includes('@')
+            ? { name: String(src.sender || ''), email: senderSmtp }
+            : null
+          let self = ''
+          try {
+            const acct = await panelCall('account', {})
+            if (acct && acct.status === 'ok') self = String(acct.smtp || '').toLowerCase()
+          } catch { self = '' }
+          if (mode === 'reply' && sender) draft.to = [sender]
+          if (mode === 'replyAll') {
+            const seen = new Set([self])
+            const push = (a) => {
+              if (!a || !a.email) return
+              const k = String(a.email).toLowerCase()
+              if (seen.has(k)) return
+              seen.add(k)
+              draft.to.push(a)
+            }
+            push(sender)
+            for (const a of parseAddrList(src.to)) push(a)
+            for (const a of parseAddrList(src.cc)) {
+              if (!a.email) continue
+              const k = String(a.email).toLowerCase()
+              if (seen.has(k)) continue
+              seen.add(k)
+              draft.cc.push(a)
+            }
+          }
+          const html = typeof src.htmlBody === 'string' && src.htmlBody !== ''
+            ? src.htmlBody
+            : '<p>' + String(src.body || '').replace(/&/g, '&amp;').replace(/</g, '&lt;')
+                .split(/\n{2,}/).map((p) => p.replace(/\n/g, '<br>')).join('</p><p>') + '</p>'
+          const who = sender
+            ? (sender.name ? sender.name + ' &lt;' + sender.email + '&gt;' : sender.email)
+            : (String(src.sender || '') || 'the sender')
+          draft.quoteHtml = '<div class="maildesk-quote"><p>On ' + String(src.received || '') + ', ' + who + ' wrote:</p><blockquote>' + quoteSafe(html) + '</blockquote></div>'
+        }
+      }
+      drafts.set(key, draft)
+      return { draft: publicDraft(draft), reused: false }
+    }
+    function patchDraft(draft, patch) {
+      for (const f of ['to', 'cc', 'bcc']) {
+        if (patch[f] !== undefined) {
+          draft[f] = asList(patch[f])
+            .map((a) => ({ name: String((a && a.name) || ''), email: String((a && a.email) || '') }))
+            .filter((a) => a.email !== '')
+        }
+      }
+      if (patch.subject !== undefined) draft.subject = String(patch.subject)
+      if (patch.bodyHtml !== undefined) draft.bodyHtml = String(patch.bodyHtml)
+      draft.updatedAt = Date.now()
+      return draft
+    }
+    const sendArgs = (d) => ({
+      mode: d.mode,
+      inReplyToEntryId: d.inReplyTo || undefined,
+      to: formatAddrList(d.to),
+      cc: formatAddrList(d.cc),
+      bcc: formatAddrList(d.bcc),
+      subject: d.subject,
+      htmlBody: String(d.bodyHtml || '') + String(d.quoteHtml || ''),
+    })
+    async function sendDraft(id, confirmHash) {
+      const d = findDraft(String(id || ''))
+      if (d === null) return { status: 'error', error: 'unknown draft: ' + id }
+      const args = sendArgs(d)
+      // A reply may legitimately carry no explicit recipient list: Outlook's
+      // own Reply()/ReplyAll() already addressed it from the source item, and
+      // an empty To must not overwrite that.
+      const replyMode = args.mode === 'reply' || args.mode === 'replyAll' || args.mode === 'forward'
+      if (!args.to && !replyMode) return { status: 'error', error: 'a send needs at least one recipient' }
+      const hash = contentHash(args)
+      if (String(confirmHash || '') !== hash) {
+        return {
+          status: 'needs-confirmation',
+          hash,
+          preview: { mode: args.mode, to: args.to, cc: args.cc, bcc: args.bcc, subject: args.subject, htmlBody: args.htmlBody },
+          instruction: 'Show the recipient, subject and body to the user and retry with the same hash only after they allow this exact content.',
+        }
+      }
+      let result
+      if (fixture !== null) {
+        result = fixtureCall('compose_send', args)
+      } else {
+        // The human clicked Send and then allowed the exact content above, so
+        // the host mints the one-time token the bridge demands.
+        result = await olk('compose_send', args, { confirmed: true })
+      }
+      if (result && result.status === 'ok') {
+        drafts.delete(draftKeyOf(d.account, d.mode, d.inReplyTo))
+        result.draftId = d.id
+      }
+      return result
+    }
+    const draftRoute = async (req, res) => {
+      res.setHeader('Content-Type', 'application/json; charset=utf-8')
+      if (req.method !== 'POST') { res.statusCode = 405; res.end(JSON.stringify({ ok: false, error: 'POST only' })); return }
+      if (!sameOrigin(req)) { res.statusCode = 403; res.end(JSON.stringify({ ok: false, error: 'cross-origin request refused' })); return }
+      const body = await readJsonBody(req, 256 * 1024)
+      if (body.error !== undefined) { res.statusCode = 400; res.end(JSON.stringify({ ok: false, error: body.error })); return }
+      const payload = body.value !== null && typeof body.value === 'object' ? body.value : {}
+      const op = String(payload.op || '')
+      try {
+        if (op === 'open') { res.end(JSON.stringify({ ok: true, ...(await openDraft(payload)) })); return }
+        if (op === 'save') {
+          const d = findDraft(String(payload.draftId || ''))
+          if (d === null) { res.statusCode = 404; res.end(JSON.stringify({ ok: false, error: 'unknown draft: ' + payload.draftId })); return }
+          patchDraft(d, payload.patch !== null && typeof payload.patch === 'object' ? payload.patch : {})
+          res.end(JSON.stringify({ ok: true, draft: publicDraft(d) }))
+          return
+        }
+        if (op === 'discard') {
+          const d = findDraft(String(payload.draftId || ''))
+          if (d !== null) drafts.delete(draftKeyOf(d.account, d.mode, d.inReplyTo))
+          res.end(JSON.stringify({ ok: true, discarded: d !== null }))
+          return
+        }
+        if (op === 'list') {
+          res.end(JSON.stringify({ ok: true, drafts: [...drafts.values()].map(publicDraft) }))
+          return
+        }
+        res.statusCode = 400
+        res.end(JSON.stringify({ ok: false, error: 'unknown draft op: ' + op }))
+      } catch (error) {
+        res.end(JSON.stringify({ ok: false, error: (error && error.message) || String(error) }))
+      }
+    }
+    const sendRoute = async (req, res) => {
+      res.setHeader('Content-Type', 'application/json; charset=utf-8')
+      if (req.method !== 'POST') { res.statusCode = 405; res.end(JSON.stringify({ ok: false, error: 'POST only' })); return }
+      if (!sameOrigin(req)) { res.statusCode = 403; res.end(JSON.stringify({ ok: false, error: 'cross-origin request refused' })); return }
+      const body = await readJsonBody(req, 256 * 1024)
+      if (body.error !== undefined) { res.statusCode = 400; res.end(JSON.stringify({ ok: false, error: body.error })); return }
+      const payload = body.value !== null && typeof body.value === 'object' ? body.value : {}
+      try {
+        const result = await sendDraft(payload.draftId, payload.confirmHash)
+        // 200 either way: needs-confirmation is a step in a flow, not a fault.
+        res.end(JSON.stringify({ ok: result.status === 'ok', result }))
+      } catch (error) {
+        res.end(JSON.stringify({ ok: false, error: (error && error.message) || String(error) }))
+      }
+    }
+    ctx.effect(() => webCtx.webServer.register({ kind: 'exact', path: '/maildesk/api/draft', handler: draftRoute }), 'dsh-arya-maildesk: draft route')
+    ctx.effect(() => webCtx.webServer.register({ kind: 'exact', path: '/maildesk/api/send', handler: sendRoute }), 'dsh-arya-maildesk: send route')
   })
 
   ctx.tools.register({

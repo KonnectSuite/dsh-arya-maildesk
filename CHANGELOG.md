@@ -1,92 +1,97 @@
 # Changelog
 
-本项目的版本叙事遵循"为什么改"优先于"改了什么"。每条都先给动机。
+This project's version narrative puts **why** before **what**. Every entry starts with the motivation.
 
-## 2.12.0 — 邮件管理：删除、移动、已读、文件夹与分页列表（fork 首个增量）
+## 2.12.0 — Mail management, and the plugin speaks English (first fork increment)
 
-（本仓库是 `dsh-outlook` 的 fork，基线 `5a2ec7d` / v2.11.0，见 `NOTICE` 与 `UPSTREAM.md`。）
+*(This repository is a fork of `dsh-outlook`, base `5a2ec7d` / v2.11.0 — see `NOTICE` and `UPSTREAM.md`.)*
 
-**为什么**：上游 18 个工具把"读"做到了极致，却一个"改"都没有——没有删除、没有移动/归档、没有改已读，也没有文件夹树和分页列表。于是 agent 能在收件箱里看和搜，却永远不能替用户把它整理干净，而"整理"恰恰是每天真正花时间的那件事。更实际的阻塞在 GUI 上：`search_mail` 的 `limit` 上限 50 且没有 offset，做不出一个能往下滚的列表视图——面板的第一块砖正好缺在这里。
+**Why**: two problems, one release.
 
-**改了什么**：
-- 桥（`lib/olk.ps1`）新增 5 个动作，**全部为增量**，既有的 18 个分支一个字符都没动：`list_folders`（BFS 遍历所有 store 的文件夹树，返回 entryId/路径/层级/子项数/未读数，`counts:false` 可跳过两次计数读取——大邮箱上那是每文件夹一次 COM 读）、`list_mail`（文件夹 + 排序 + offset/limit≤200 + 可选仅未读 + 可选 160 字预览，返回 total/offset/returned，这是"浏览"而非"搜索"）、`move_mail`（`Item.Move()`，**回传新 entryId**，因为移动会换 ID，调用方必须换新的）、`delete_mail`（只做软删除 `Item.Delete()`，进"已删除邮件"，`recoverable:true`）、`mark_read`（`UnRead` + `Save()`，可反选）。
-- 新增 `Resolve-Folder`：文件夹可用路径（`Inbox/项目/2026`，`/` 与 `\` 都收）、英文通用名（Inbox / Sent Items / Drafts / Deleted Items）或 entryId。**故意不认中文别名**——源码保持纯 ASCII，任何非 UTF-8 的传输都不可能把一个中文字面量悄悄改成"永远匹配不上"的样子。这条是被上游 CHANGELOG 里两次编码事故教出来的。
-- 单次批量上限 500，多封逐封 try/catch，失败项进 `failed[]` 而不是整批失败——拖 40 封时不能因为第 17 封是会议邀请就全军覆没。
-- `delete_mail` 额外一道 `expected` 数量门：调用方必须声明"我认为这里有 N 封"，实际取到 M≠N 时**直接拒绝**并让人重读文件夹，而不是删掉一批它没看清的东西。删除仍是软删除，不碰"已删除邮件"里的永久清除。
-- host 新增 5 个工具：`outlook_list_folders`、`outlook_list_mail`、`outlook_move_mail`、`outlook_delete_mail`、`outlook_mark_read`（共 23 个）。
-- **没有新增确认门**，这是有意的：既有的两段式确认 + 内容哈希 + `OLK_CONFIRM` 令牌只针对"信会离开机器"的动作（`send_draft`/`reply_mail`/带与会人的 `calendar_create`/`respond_meeting`/`meeting_update`/`meeting_cancel`）。删除与移动不出机器，且删除是可撤销的软删除，硬塞进发信确认里只会训练用户无脑点确认——真正的风险用数量门兜。
+Upstream's 18 tools do "read" exhaustively and "change" not at all — no delete, no move or archive, no read-state, no folder tree, no paging. So the agent could look and search inside a mailbox but never tidy it up, and tidying is the part that actually costs time every day. The concrete blocker is the GUI: `search_mail` caps `limit` at 50 and has no offset, so a list view that scrolls cannot be built on it. The first brick of the panel was missing exactly here.
 
-## 2.11.0 — 聊天里的"打开"链接点击不再留死标签页
+And the plugin talked to its user in Chinese: the badge, the popover, the toasts, and — worse — the text of the confirmation popups that decide whether a mail goes out. On a desk where nobody reads it that way, every confirmation was a wall of text the reader had to trust instead of read.
 
-**为什么**：agent 在会话里贴的 `[打开](…/olk-notify/open?entryId=…)` markdown 链接走 GET 导航——每点一次就多出一个"已在 Outlook 中打开 / 此页面可关闭"的标签页，最常用的"看一眼这封邮件"动作反而在浏览器里留下一排垃圾标签。同时该链接硬编码 `127.0.0.1:3080`，自定义端口部署时点击直接连接失败（README 已列为已知边界）。
+**What changed**:
+- Bridge (`lib/olk.ps1`): 5 new actions, **all additive** — not one character of the existing 18 branches was touched: `list_folders` (BFS over every store's folder tree, returning entryId/path/depth/child count/unread; `counts:false` skips the two count reads per folder, which is one COM round trip each on a large mailbox), `list_mail` (folder + sort + offset/limit ≤ 200 + optional unread-only + optional 160-char preview, returning total/offset/returned — browse, not search), `move_mail` (`Item.Move()`, **returning the new entryId**, because a move changes the ID and any caller holding the old one holds nothing), `delete_mail` (soft delete only, `Item.Delete()` into Deleted Items, `recoverable:true`), `mark_read` (`UnRead` + `Save()`, reversible).
+- New `Resolve-Folder`: a folder may be a path (`Inbox/Project/2026`, `/` and `\` both accepted), an English well-known name (Inbox / Sent Items / Drafts / Deleted Items), or an entryId. **CJK aliases were deliberately dropped everywhere** — folder names, the GAL match, the room-list match — so the source stays pure ASCII and no non-UTF-8 transport can quietly turn a literal into one that never matches. Consequence: a mailbox whose folders are named in another language must be addressed by entryId. `search_mail` still carries its own inline copy of the old resolver; folding it into `Resolve-Folder` is a `TODO(fork)` once the new actions have run against a real Outlook.
+- Batch cap of 500 per call, each item in its own try/catch, failures collected into `failed[]` instead of failing the batch — dragging 40 mails must not die because the 17th is a meeting invite.
+- `delete_mail` carries an `expected` count gate: the caller must state "I believe there are N here", and a mismatch **refuses outright** and asks for a re-read, instead of deleting a selection it never saw clearly. Deletion stays soft; nothing in the plugin purges Deleted Items.
+- Host: 5 new tools — `outlook_list_folders`, `outlook_list_mail`, `outlook_move_mail`, `outlook_delete_mail`, `outlook_mark_read` (23 in total).
+- **No new confirmation gate, on purpose.** The two-call confirmation, the content hash and the `OLK_CONFIRM` token exist for actions whose output *leaves the machine* (`send_draft`/`reply_mail`/`calendar_create` with attendees/`respond_meeting`/`meeting_update`/`meeting_cancel`). Deleting to Deleted Items and moving between folders do not leave it, and a gate there would only teach the user to approve without reading. The real hazard is covered by the count gate instead.
+- Full English sweep: every user-facing string in `index.js` (confirmation previews, tool descriptions, the chat link labels) and every string in `client.js` (badge, aria labels, popover, toasts) is now English; the CJK folder/GAL/room aliases are gone from `lib/olk.ps1`; `README.md`, `TESTCASES.md` and this file are rewritten in English. The two `assets/*.png` badge screenshots still show the old Chinese tooltip and need a re-shoot.
 
-**改了什么**：
-- client 半新增捕获阶段点击拦截：普通左键点击路径名为 `/olk-notify/open` 且带 `entryId` 的锚点时，按**匹配 pathname 而非完整 URL** 识别（任意端口都命中），改为同源 POST——与侧边栏弹层完全相同的已验证通道——Outlook 弹窗打开邮件，**零新标签页**，页面底部给出 2.6s toast 反馈（成功含主题，失败含错误并 beacon 上报）。这同时修复了自定义端口部署的链接失效边界：拦截后总是打向页面自身 origin。
-- **GET 导航降级整体移除**（按需求决策）：`/olk-notify/open` 改为 POST-only JSON 路由，结果页（"此页面可关闭"）、关闭按钮全部删除——正常路径不再产生标签页，就没有必要维护第二形态的降级面。修饰键/中键点击该链接会得到 405（有意行为）。GET 非法 entryId 曾误返 500 的问题随 GET 分支一并消失。
-- 拦截监听器与 toast 均注册在 fiber effect 中，插件停用/更新时自动移除（监听器、定时器、DOM 三者都清理）。
-- pending 队列清理/角标减 1 逻辑不变：侧边栏与聊天链接现在走完全相同的 POST 处理器。
+## 2.11.0 — Chat "open" links no longer leave dead tabs
 
-## 2.10.1 — 公共发布前的移植性加固
+**Why**: the `[Open](…/olk-notify/open?entryId=…)` markdown link the agent posts in a conversation is a GET navigation — every click left behind a "opened in Outlook / this page can be closed" tab. The most common action ("take a look at this mail") was the one that littered the browser. The same link also hard-coded `127.0.0.1:3080`, so on a custom-port deployment the click failed outright (README listed it as a known boundary).
 
-**为什么**：插件将面向任意用户的电脑分发，不能假设安装目录可写、Outlook 一定装过、README 永远是最新的。
+**What changed**:
+- The client half gained capture-phase click interception: on a plain left click of an anchor whose pathname is `/olk-notify/open` carrying an `entryId`, **matched by pathname rather than by full URL** (so any port hits), the click becomes a same-origin POST — the exact channel the sidebar popover already used — and Outlook opens the mail with **no new tab**, plus a 2.6s toast (subject on success, error plus beacon on failure). This also fixed the custom-port dead link: once intercepted, it always targets the page's own origin.
+- **The GET navigation fallback was removed entirely** (a decision, not an oversight): `/olk-notify/open` is now a POST-only JSON route. The result page ("this page can be closed") and its close button are gone — the normal path no longer creates a tab, so there was no reason to maintain a second shape. A modifier-click or middle-click on such a link now gets 405, deliberately. The GET 500 on an invalid entryId disappeared with the branch.
+- Both the interception listener and the toast are registered inside a fiber effect, so disabling or updating the plugin removes them (listener, timer and DOM node).
+- Pending-queue cleanup and the badge decrement are unchanged: the sidebar and the chat link now go through exactly the same POST handler.
 
-**改了什么**：
-- watcher 诊断日志从插件安装目录（全局安装可能只读）移到 `%TEMP%\dsh-outlook-watch-debug.log`。
-- 桥在 COM 对象创建前做 HKCR 预检：未装经典 Outlook（或只有 UWP "New Outlook"）时返回可操作的错误信息，而非天书般的 ActiveX 报错。
-- 桥/watcher 调用改为 `Get-Content -Raw -Encoding UTF8`，不再依赖文件 BOM（编辑工具会剥 BOM 的坑已两次复现）。
-- README 刷新到 18 工具/43 用例的现状，补会议四件套与 `outlook_open_mail`，已知边界一节更新（端口假设、OLK_WATCH 开关、日志位置）。
-- `meeting_update`/`meeting_cancel` 工具描述与实际行为对齐（统一两段式确认）。
+## 2.10.1 — Portability hardening before the public release
 
-## 2.10.0 — 会话里点击即打开邮件 + 桥的编码隐患修复
+**Why**: the plugin ships to arbitrary machines. It cannot assume its install directory is writable, that Outlook was ever installed, or that the README is current.
 
-**为什么**：搜索/新邮件结果只给了 entryId，用户想看原文必须自己在 Outlook 里翻——最常用的"看一眼这封邮件"动作反而最绕。同时在实测中暴露：`olk.ps1`/`watch.ps1` 是无 BOM 的 UTF-8，PowerShell 5.1 的 `Get-Content -Raw` 按系统代码页（GBK）解码时中文全乱、整文件解析失败——生产环境只是因系统代码页恰好非 GBK 而侥幸未爆。
+**What changed**:
+- Watcher diagnostics moved from the plugin install directory (which may be read-only for a global install) to `%TEMP%\dsh-outlook-watch-debug.log`.
+- The bridge prechecks `HKCR` before creating any COM object: with no classic Outlook installed (or only the UWP "New Outlook") it returns an actionable message instead of an opaque ActiveX error.
+- Bridge and watcher are invoked via `Get-Content -Raw -Encoding UTF8`, so they no longer depend on a file BOM (the "an editor strips the BOM" trap has now reproduced twice).
+- README refreshed to the actual 18 tools / 43 cases, the four meeting tools and `outlook_open_mail` documented, and the known-boundaries section updated (port assumptions, the `OLK_WATCH` switch, log location).
+- `meeting_update`/`meeting_cancel` descriptions aligned with what the code does (uniform two-call confirmation).
 
-**改了什么**：
-- 桥新增 `open_mail` 动作：`GetItemFromID().Display()` 在桌面 Outlook 检查器窗口打开邮件，并显式置 `UnRead=$false`（打开即视为已读，返回 `wasUnread`）。纯本地动作，不离开机器，不走确认门。
-- host 新增 `/olk-notify/open` 路由：GET（`?entryId=`，返回极简 HTML 结果页，供会话聊天里的 markdown 链接点击）+ POST（JSON，供侧边栏弹层）。沿用 sameOrigin 守卫（浏览器导航无 Origin 头，与既有路由同信任级）；entryId 白名单正则（`[A-Za-z0-9+/=_-]{20,512}`）。打开成功后 host 把该 entryId 移出 `notify.pending` 并 `unread--`，角标计数随之减 1。
-- 新工具 `outlook_open_mail`（共 18 个工具）；`outlook_search_mail`/`outlook_check_new` 描述追加"给每封邮件贴可点击打开链接"的提示，agent 展示结果时直接给 `[打开](…/olk-notify/open?entryId=…)` 链接。
-- 侧边栏新邮件弹层每封邮件变为可点击按钮：POST 打开路由，成功后条目立即从列表移除（角标即时减 1，不等 20s 轮询），失败 beacon 上报。
-- `olk.ps1`/`watch.ps1` 前置 UTF-8 BOM，根除 PS5.1 ANSI 误读。
+## 2.10.0 — Click a mail in the conversation to open it, and a bridge encoding hazard fixed
 
-## 2.6.1 — 让收起侧边栏时角标永远可见
+**Why**: search and new-mail results returned only an entryId, so a user who wanted to read the original had to go find it in Outlook — the most common action ("take a look at this mail") was the most roundabout. Testing also exposed something worse: `olk.ps1`/`watch.ps1` were BOM-less UTF-8, and PowerShell 5.1's `Get-Content -Raw` decodes with the system code page (GBK) — every Chinese literal came out garbled and the whole file failed to parse. Production had only survived because the system code page happened not to be GBK.
 
-**为什么**：收起态角标探出按钮外沿（top:-4px），会被侧边栏收起动画的裁剪容器切掉或被上方行遮挡——用户看不到新邮件提醒，通知功能在最需要安静的 rail 形态下失效。
+**What changed**:
+- Bridge action `open_mail`: `GetItemFromID().Display()` opens the mail in a desktop Outlook inspector and explicitly sets `UnRead=$false` (opening counts as reading; `wasUnread` is returned). Purely local, never leaves the machine, no confirmation gate.
+- Host route `/olk-notify/open`: GET (`?entryId=`, returning a minimal HTML result page the chat markdown link could navigate to) plus POST (JSON, for the sidebar popover). Both keep the same-origin guard (a browser navigation sends no Origin header, so it is trusted at the same level as the existing routes) and an entryId allowlist regex (`[A-Za-z0-9+/=_-]{20,512}`). On success the host drops that entryId from `notify.pending` and decrements `unread`, so the badge follows.
+- New tool `outlook_open_mail` (18 in total); the `outlook_search_mail`/`outlook_check_new` descriptions gained a hint to attach a clickable open link to each mail.
+- Every mail in the sidebar popover became a clickable button: POST to the open route, removed from the list on success (badge decrements immediately, not at the next 20s poll), beacon on failure.
+- `olk.ps1`/`watch.ps1` got a UTF-8 BOM, killing the PS 5.1 ANSI misread at the root.
 
-**改了什么**：收起态改用 14px 内置小红点（圆钮右上角内侧），展开态保持外置描边角标不变；角标加 `z-index:1`。
+## 2.6.1 — The badge stays visible when the sidebar is collapsed
 
-## 2.6.0 — 从 DOM 注入迁移到官方槽位
+**Why**: in collapsed mode the badge protruded past the button's edge (`top:-4px`) and was either clipped by the sidebar's collapse-animation container or covered by the row above — so the user could not see new mail, and the notification feature failed exactly in the quiet rail form where it mattered most.
 
-**为什么**：旧版把按钮直接插进 shell 的 footArea 容器并用双 MutationObserver 自愈。这换来了位置自由，但代价是三起真实事故：v2.5.1 之前的 observer 微任务风暴冻结整个页面（"Loading plugins…"）；对哈希 CSS 类名的子串匹配随 shell 升级静默失效；悬停反馈因内联样式优先级永远不渲染。
+**What changed**: in collapsed mode a 14px dot is drawn inside the 36px circle's top-right corner; the expanded outside badge is unchanged; the badge got `z-index:1`.
 
-**改了什么**：整个按钮改为通过 `sidebar.footer.action` 槽位注册（与 dsh-dock 鲸湾菜单同一正规通道），React 全权托管生命周期——observer、自愈、类名探测全部删除（约 150 行防御代码归零）。`wide`/rail 几何来自槽位 props；弹层改为 React Portal（点击外部关闭保留）。order:10 保持原视觉位置（鲸湾之上）。
+## 2.6.0 — From DOM injection to an official slot
 
-## 2.5.3 — 悬停反馈真的能渲染了
+**Why**: the old version injected its button straight into the shell's footArea container and defended itself with two MutationObservers. That bought positional freedom at the price of three real incidents: before v2.5.1 an observer microtask storm froze the entire page ("Loading plugins…"); substring matching against hashed CSS class names broke silently whenever the shell was upgraded; and hover feedback never rendered at all because inline styles outranked the stylesheet.
 
-**为什么**：v2.5.2 修正了悬停色变量（`--dsh-` → `--dsw-`）但用户仍看不到底色——内联 `background:'transparent'` 的优先级永远高于样式表的 `:hover` 规则。
+**What changed**: the whole button now registers through the `sidebar.footer.action` slot (the same official channel dsh-dock's Whale Bay menu uses), and React owns its lifecycle — observer, self-healing and class-name probing are all deleted (about 150 lines of defensive code gone). `wide`/rail geometry comes from the slot props; the popover became a React Portal (click-outside still closes it). `order:10` keeps the original visual position (above Whale Bay).
 
-**改了什么**：透明底色从内联样式移入注入样式表，让 `:hover` 可覆盖。
+## 2.5.3 — Hover feedback actually renders now
 
-## 2.5.2 — 与原生设置按钮逐项对齐
+**Why**: v2.5.2 fixed the hover colour variable (`--dsh-` → `--dsw-`) and the user still saw no background — an inline `background:'transparent'` always outranks a stylesheet's `:hover` rule.
 
-**为什么**：悬停用错了 token 前缀（`--dsh-`，变量不存在），收起态边距与原生设置按钮不一致（4px vs 8px/10px），并排时肉眼可见地不齐。
+**What changed**: the transparent background moved out of the inline style and into the injected stylesheet so `:hover` can override it.
 
-**改了什么**：hover token 对齐 `--dsw-alias-interactive-bg-hover`；rail 边距对齐 `8px 0 10px`；其余几何参数逐项核对确认本来就一致。
+## 2.5.2 — Aligned with the native settings button, item by item
 
-## 2.6.0 同批 — 深度 review 修复 14 项
+**Why**: hover used the wrong token prefix (`--dsh-`, a variable that does not exist), and the collapsed margin did not match the native settings button (4px vs 8px/10px), which is visibly crooked side by side.
 
-安全审计发现的确定性 bug 与加固（全部有测试用例，见 TESTCASES.md）：
+**What changed**: hover token aligned to `--dsw-alias-interactive-bg-hover`; rail margin aligned to `8px 0 10px`; the remaining geometry parameters were checked one by one and were already correct.
 
-- **内容哈希绑定**（安全加固）：`confirmed:true` 重试的内容哈希必须与最后一次展示给用户的确认一致，否则强制重新确认——"展示 A、发送 B"的偷换在 host 层即被拦截（两种攻击场景实测拦截）。
-- `search_mail` 的 `unread` 字段语义反转（`-not $it.UnRead` → `[bool]$it.UnRead`）。
-- 未知 action 返回 `status:'ok'` + error 的矛盾组合 → 改为 throw。
-- 附件保存：`GetFileName` 防路径穿越 + 同名自动 `(n)` 编号不覆盖。
-- COM 调用串行化（Outlook 单线程，并发 spawn 互踩）。
-- `client-log` 路由 64KB 上限（413）；调试日志 1MB 截断轮转。
-- watcher `received` 改用邮件真实 `ReceivedTime`。
-- `ResolveAll()` 失败列出未解析参会人并中止；会议室查询优先 SMTP 唯一解析。
-- `account` 按默认收件箱 DeliveryStore 匹配。
-- DASL LIKE 剥离 `%`/`_` 通配符；发送失败清理孤儿草稿；弹层 ARIA 语义（dialog）。
+## 2.6.0 batch — 14 fixes from a deep review
 
-## 2.5.1 及更早
+Deterministic bugs and hardening found by a security review (all covered by cases in TESTCASES.md):
 
-（历史版本未留存 changelog；quirks 与实战教训编码在 lib/olk.ps1 头部注释与 README "Quirks" 一节。）
+- **Content-hash binding** (hardening): the content hash on a `confirmed:true` retry must match the last thing shown to the user, or confirmation is forced again — "show A, send B" is blocked at the host layer (both attack scenarios verified as blocked).
+- `search_mail`'s `unread` field had inverted semantics (`-not $it.UnRead` → `[bool]$it.UnRead`).
+- An unknown action returned `status:'ok'` together with an error; it now throws.
+- Attachment saving: `GetFileName` against path traversal, plus automatic `(n)` numbering instead of overwriting.
+- COM calls serialized (Outlook is single-threaded; concurrent spawns trampled each other).
+- `client-log` route capped at 64KB (413); the debug log rotates at 1MB.
+- The watcher's `received` now uses the mail's real `ReceivedTime`.
+- A failed `ResolveAll()` lists the unresolved attendees and aborts; room lookup prefers a unique SMTP resolution.
+- `account` matches by the default Inbox's DeliveryStore.
+- DASL LIKE strips `%`/`_` wildcards; a failed send cleans up the orphan draft; the popover got proper ARIA semantics (dialog).
+
+## 2.5.1 and earlier
+
+(No changelog was kept for these versions; the quirks and the field lessons are encoded in the `lib/olk.ps1` header comment.)

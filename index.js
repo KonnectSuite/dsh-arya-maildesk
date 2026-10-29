@@ -411,7 +411,7 @@ export function apply(ctx) {
 
   ctx.tools.register({
     name: 'outlook_open_mail',
-    description: 'Open one email in a desktop Outlook inspector window by entryId (from outlook_search_mail / outlook_check_new). Local action: nothing leaves the machine, no confirmation needed. When presenting search results in chat, prefer composing a clickable markdown link per mail, e.g. [在Outlook打开](http://127.0.0.1:3080/olk-notify/open?entryId=<entryId>) — the user can click it to open the mail directly.',
+    description: 'Open one email in a desktop Outlook inspector window by entryId (from outlook_search_mail / outlook_check_new). Local action: nothing leaves the machine, no confirmation needed. When presenting search results in chat, prefer composing a clickable markdown link per mail, e.g. [Open in Outlook](http://127.0.0.1:3080/olk-notify/open?entryId=<entryId>) — the user can click it to open the mail directly.',
     parameters: {
       type: 'object',
       additionalProperties: true,
@@ -430,13 +430,13 @@ export function apply(ctx) {
 
   ctx.tools.register({
     name: 'outlook_search_mail',
-    description: 'Search emails in the local Outlook mailbox (read-only). Default: last 14 days of Inbox, newest first. Supports arbitrary folder paths ("Inbox/ProjectA", "已发送"), recipient-side matching (to), and exact date ranges (dateFrom/dateTo override days). Returns entryId values usable with outlook_read_mail. Tip: when listing results to the user, append a clickable open link per mail: [打开](http://127.0.0.1:3080/olk-notify/open?entryId=<entryId>).',
+    description: 'Search emails in the local Outlook mailbox (read-only). Default: last 14 days of Inbox, newest first. Supports arbitrary folder paths ("Inbox/ProjectA", "Sent Items"), recipient-side matching (to), and exact date ranges (dateFrom/dateTo override days). Returns entryId values usable with outlook_read_mail. Tip: when listing results to the user, append a clickable open link per mail: [Open](http://127.0.0.1:3080/olk-notify/open?entryId=<entryId>).',
     parameters: {
       type: 'object',
       additionalProperties: true,
       properties: {
         days: { type: 'number', description: 'How many days back to search. Default 14. Ignored when dateFrom/dateTo is given.' },
-        folder: { type: 'string', description: 'Folder to search: "Inbox" (default), "已发送"/"Sent Items", "草稿"/"Drafts", or any path like "Inbox/ProjectA" (segments separated by / or \\). Paths are walked from the primary mailbox root.' },
+        folder: { type: 'string', description: 'Folder to search: "Inbox" (default), "Sent Items", "Drafts", or any path like "Inbox/ProjectA" (segments separated by / or \\). Paths are walked from the primary mailbox root.' },
         from: { type: 'string', description: 'Filter: sender name contains this text.' },
         to: { type: 'string', description: 'Filter: recipient display name contains this text (recipient-side search).' },
         subjectContains: { type: 'string', description: 'Filter: subject contains this text.' },
@@ -532,9 +532,9 @@ export function apply(ctx) {
         if (att.error) return { status: 'error', error: att.error }
         confirmations.set('send-mail', h)
         return needsConfirmation('send-mail',
-          '收件人: ' + a.to + (a.cc ? '\n抄送: ' + a.cc : '') + (a.bcc ? '\n密送: ' + a.bcc : '') + '\n主题: ' + a.subject
-          + (att.lines ? '\n附件: ' + att.lines : '')
-          + '\n\n正文:\n' + String(a.body),
+          'To: ' + a.to + (a.cc ? '\nCc: ' + a.cc : '') + (a.bcc ? '\nBcc: ' + a.bcc : '') + '\nSubject: ' + a.subject
+          + (att.lines ? '\nAttachments: ' + att.lines : '')
+          + '\n\nBody:\n' + String(a.body),
           ['to', 'cc', 'bcc', 'subject', 'body'])
       }
       const draft = await olk('draft_mail', a)
@@ -602,19 +602,19 @@ export function apply(ctx) {
         confirmations.set('calendar-invite', h)
         let recText = ''
         if (rec) {
-          recText = '\n周期: ' + rec.type + (rec.interval ? ' x' + rec.interval : '')
+          recText = '\nRecurrence: ' + rec.type + (rec.interval ? ' x' + rec.interval : '')
           if (rec.daysOfWeek && rec.daysOfWeek.length) recText += ' on ' + rec.daysOfWeek.join(',')
-          if (rec.count) recText += ', ' + rec.count + '次'
+          if (rec.count) recText += ', ' + rec.count + ' times'
           else if (rec.until) recText += ', until ' + rec.until
         }
         return needsConfirmation('calendar-invite',
-          '主题: ' + a.subject + '\n时间: ' + a.start + ' ~ ' + a.end
-            + (a.location ? '\n地点: ' + a.location : '')
-            + (required.length ? '\n必选参会人: ' + required.join('; ') : '')
-            + (optional.length ? '\n可选参会人: ' + optional.join('; ') : '')
-            + (hasRecipients ? '（将发出会议邀请）' : '')
+          'Subject: ' + a.subject + '\nWhen: ' + a.start + ' ~ ' + a.end
+            + (a.location ? '\nLocation: ' + a.location : '')
+            + (required.length ? '\nRequired: ' + required.join('; ') : '')
+            + (optional.length ? '\nOptional: ' + optional.join('; ') : '')
+            + (hasRecipients ? ' (meeting invites will be sent)' : '')
             + recText
-            + (a.body ? '\n\n正文:\n' + String(a.body) : ''),
+            + (a.body ? '\n\nBody:\n' + String(a.body) : ''),
           ['subject', 'location', 'body'])
       }
       return dispatchConfirmed('calendar-invite', 'calendar_create', a, { confirmed: hasRecipients })
@@ -655,9 +655,9 @@ export function apply(ctx) {
       const h = contentHash({ entryId: a.entryId, response: a.response })
       if (a.confirmed !== true || confirmations.get('meeting-respond') !== h) {
         confirmations.set('meeting-respond', h)
-        const label = a.response === 'accept' ? '接受' : a.response === 'tentative' ? '暂定接受' : a.response === 'decline' ? '拒绝' : String(a.response)
+        const label = a.response === 'accept' ? 'accept' : a.response === 'tentative' ? 'tentative' : a.response === 'decline' ? 'decline' : String(a.response)
         return needsConfirmation('meeting-respond',
-          '会议响应: ' + label + '\n请求 entryId: ' + a.entryId + '\n（响应将发送给组织者；先用 outlook_meeting_requests 查看详情）')
+          'Meeting response: ' + label + '\nRequest entryId: ' + a.entryId + '\n(the response goes to the organizer; call outlook_meeting_requests first for details)')
       }
       return dispatchConfirmed('meeting-respond', 'respond_meeting', a, { confirmed: true })
     },
@@ -690,15 +690,15 @@ export function apply(ctx) {
       if (a.confirmed !== true || confirmations.get('meeting-update') !== h) {
         confirmations.set('meeting-update', h)
         const changes = []
-        if (a.subject) changes.push('主题→ ' + a.subject)
-        if (a.start) changes.push('开始→ ' + a.start)
-        if (a.end) changes.push('结束→ ' + a.end)
-        if (a.location) changes.push('地点→ ' + a.location)
-        if (a.body) changes.push('正文→ ' + String(a.body).slice(0, 300))
+        if (a.subject) changes.push('subject -> ' + a.subject)
+        if (a.start) changes.push('start -> ' + a.start)
+        if (a.end) changes.push('end -> ' + a.end)
+        if (a.location) changes.push('location -> ' + a.location)
+        if (a.body) changes.push('body -> ' + String(a.body).slice(0, 300))
         if (changes.length === 0) return { status: 'error', error: 'nothing to update: provide at least one changed field.' }
         return needsConfirmation('meeting-update',
-          '更新会议 entryId: ' + a.entryId + '\n变更:\n- ' + changes.join('\n- ')
-          + '\n（若为多人会议，将自动通知所有参会人）')
+          'Update meeting entryId: ' + a.entryId + '\nchanges:\n- ' + changes.join('\n- ')
+          + '\n(attendees are notified automatically if this is a group meeting)')
       }
       return dispatchConfirmed('meeting-update', 'meeting_update', a, { confirmed: true })
     },
@@ -726,7 +726,7 @@ export function apply(ctx) {
       if (a.confirmed !== true || confirmations.get('meeting-cancel') !== h) {
         confirmations.set('meeting-cancel', h)
         return needsConfirmation('meeting-cancel',
-          '取消会议 entryId: ' + a.entryId + '\n（若为多人会议，将向所有参会人发出取消通知）')
+          'Cancel meeting entryId: ' + a.entryId + '\n(all attendees get a cancellation notice if this is a group meeting)')
       }
       return dispatchConfirmed('meeting-cancel', 'meeting_cancel', a, { confirmed: true })
     },
@@ -740,7 +740,7 @@ export function apply(ctx) {
       type: 'object',
       additionalProperties: true,
       properties: {
-        query: { type: 'string', description: 'Search text: partial display name (e.g. 刘文明), email, or alias.' },
+        query: { type: 'string', description: 'Search text: partial display name (e.g. Wei Liu), email, or alias.' },
         limit: { type: 'number', description: 'Max results. Default 20.' },
       },
       required: ['query'],
@@ -831,18 +831,18 @@ export function apply(ctx) {
         if (prev.status !== 'ok') return prev
         const att = attachmentLines(a.attachments)
         if (att.error) return { status: 'error', error: att.error }
-        const modeText = a.mode === 'forward' ? '转发给: ' + (a.to || '(未填)')
-          : a.mode === 'reply-all' ? '全部回复' : '回复'
+        const modeText = a.mode === 'forward' ? 'Forward to: ' + (a.to || '(empty)')
+          : a.mode === 'reply-all' ? 'Reply all' : 'Reply'
         confirmations.set('reply-mail', h)
         return needsConfirmation('reply-mail',
-          modeText + '\n原邮件: [' + prev.sender + '] ' + prev.subject
-          + (a.to && a.mode === 'forward' ? '\n转发收件人: ' + a.to : '')
-          + (a.cc ? '\n抄送: ' + a.cc : '')
-          + (a.bcc ? '\n密送: ' + a.bcc : '')
-          + (att.lines ? '\n附加附件: ' + att.lines : '')
-          + (a.mode === 'forward' ? '\n（转发自动携带原邮件附件）' : '')
-          + '\n\n你的内容:\n' + String(a.body || '')
-          + '\n\n--- 以下自动引用原邮件 ---\nFrom: ' + prev.sender
+          modeText + '\nOriginal: [' + prev.sender + '] ' + prev.subject
+          + (a.to && a.mode === 'forward' ? '\nForward to: ' + a.to : '')
+          + (a.cc ? '\nCc: ' + a.cc : '')
+          + (a.bcc ? '\nBcc: ' + a.bcc : '')
+          + (att.lines ? '\nAttach: ' + att.lines : '')
+          + (a.mode === 'forward' ? '\n(a forward carries the original attachments automatically)' : '')
+          + '\n\nYour content:\n' + String(a.body || '')
+          + '\n\n--- original message quoted below ---\nFrom: ' + prev.sender
           + '\nSent: ' + (prev.received || '')
           + '\nTo: ' + prev.to
           + '\nSubject: ' + prev.subject,
@@ -876,7 +876,7 @@ export function apply(ctx) {
 
   ctx.tools.register({
     name: 'outlook_check_new',
-    description: 'Fetch new-mail arrivals pushed by the Outlook NewMailEx watcher since the last check, as a list (entryId, subject, sender, time). Fetching clears the pending queue and resets the sidebar badge. Returns unread totals too. Read-only. Tip: when presenting arrivals to the user, append a clickable open link per mail: [打开](http://127.0.0.1:3080/olk-notify/open?entryId=<entryId>).',
+    description: 'Fetch new-mail arrivals pushed by the Outlook NewMailEx watcher since the last check, as a list (entryId, subject, sender, time). Fetching clears the pending queue and resets the sidebar badge. Returns unread totals too. Read-only. Tip: when presenting arrivals to the user, append a clickable open link per mail: [Open](http://127.0.0.1:3080/olk-notify/open?entryId=<entryId>).',
     parameters: {
       type: 'object',
       additionalProperties: true,

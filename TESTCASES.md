@@ -1,110 +1,110 @@
-# dsh-outlook 侧边栏角标功能 — 测试用例集
+# dsh-outlook sidebar badge — test case set
 
-覆盖链路：**NewMailEx watcher → index.js 状态路由 → 客户端 20s 轮询 → 角标渲染 → 弹层 → outlook_check_new 清空**。
+Chain under test: **NewMailEx watcher → index.js state route → client 20s poll → badge render → popover → `outlook_check_new` clears the queue**.
 
-标注说明：`[自动]` 可用脚本/工具验证；`[手动]` 需要浏览器观察；`[回归]` 对应历史上真实发生过的缺陷。
-
----
-
-## A. 数据链路（watcher → 状态 API）
-
-| # | 用例 | 步骤 | 预期 | 类型 |
-|---|---|---|---|---|
-| A1 | 单封新邮件推送 | 向自己发送一封邮件（经 send_mail 确认流程） | ≤20s 后 `GET /olk-notify/api/state` 返回 `pendingCount:1`，pending 含正确的 entryId/subject/sender/received | [自动] |
-| A2 | 批量到达 | 一封邮件同时抄送自己或触发多 EntryId 的 NewMailEx | 每个 EntryId 各生成一条 pending，无丢失 | [自动] |
-| A3 | received 用真实时间 | 观察 A1 返回的 received | 等于邮件 `ReceivedTime`，非事件处理时刻（回归 #7：曾用 Get-Date） | [自动][回归] |
-| A4 | watcher 崩溃自愈 | `taskkill` 掉 watcher 的 powershell 进程 | `.olk-watch-debug.log` 记录 exited，30s 后 respawn，`hello` 重新上线，期间 state 路由仍可响应（unread 为旧值） | [自动] |
-| A5 | Outlook 未启动 | 退出 Outlook 后重启 DSH | watcher 无限等待不崩溃；Outlook 启动后发出 hello（unread 正确） | [手动] |
-| A6 | pending 上限 | 模拟 >50 封未取走 | 队列保留最新 50 封（`shift()` 丢最旧），计数 = 50 | [自动] |
-| A7 | check_new 清空 | 队列非空时调用 `outlook_check_new` | 返回全部 pending 且 `count` 一致；再次调用返回 `count:0`；角标在下一轮询后消失 | [自动] |
-| A8 | watcher 禁用开关 | 设 `OLK_WATCH=0` 后重启 DSH | watcher 不启动，`state` 返回 `pendingCount:0`、`unread:null`，工具其余功能正常 | [手动] |
-
-## B. 角标渲染（client.js NewMailRow）
-
-| # | 用例 | 步骤 | 预期 | 类型 |
-|---|---|---|---|---|
-| B1 | 零状态隐藏 | `pendingCount:0` | 角标 `hidden`，按钮仅显示图标+"Outlook" | [手动] |
-| B2 | 数字居中 | pending=1 | "1" 在 16px 红圆内水平垂直居中（回归：曾因 text-align/line-height 偏移） | [手动][回归] |
-| B3 | 双位数扩展 | pending≥10 | `min-width:16px` + `padding:0 4px` 使圆角胶囊变宽，数字仍居中 | [手动] |
-| B4 | 角标不被裁剪 | 展开态观察角标 | `top:-4px;right:-4px` 探出按钮的部分完整显示（回归：曾被按钮 overflow:hidden 裁角） | [手动][回归] |
-| B5 | 轮询周期 | 发信后计时 | ≤20s 内角标出现（POLL_MS=20000） | [手动] |
-| B6 | 收起态 | 收起侧边栏 | 36px 圆钮上角标仍显示于右上角，不遮挡图标 | [手动] |
-| B7 | tooltip | 悬停按钮 | title 列出最新 8 封 `[发件人] 主题`，无新邮件时显示"暂无新邮件" | [手动] |
-| B8 | aria | 检查按钮属性 | `aria-label` = "Outlook 新邮件 N 封"（0 时"Outlook 邮件"）；`aria-haspopup:dialog` | [手动] |
-| B9 | 服务器重启期轮询 | 重启 DSH 期间观察 | fetch 失败被静默吞掉，恢复后下一轮询正常（无报错刷屏） | [手动] |
-
-## C. 弹层（popover）
-
-| # | 用例 | 步骤 | 预期 | 类型 |
-|---|---|---|---|---|
-| C1 | 打开 | 点击按钮 | 弹层出现在按钮右侧 8px，标题"📬 新邮件（N）"，列出最新 10 封（发件人/主题/时间） | [手动] |
-| C2 | 关闭-外部点击 | 点击弹层外任意处 | 弹层立即移除，document 监听器解绑 | [手动] |
-| C3 | 关闭-toggle | 再次点击按钮 | 弹层关闭（点击按钮不触发 C2 的外部关闭） | [手动] |
-| C4 | 空列表 | pending=0 时点击 | 显示"新邮件（0）"+ 底部提示"在会话里问『有什么新邮件』可读取并清空" | [手动] |
-| C5 | 卸载清理 | 禁用插件 / 刷新页面 | 弹层、按钮、`dsh-outlook-styles` 标签全部移除，无 DOM 残留 | [手动] |
-
-## D. 共存与样式回归（槽位化 v2.6.0）
-
-| # | 用例 | 步骤 | 预期 | 类型 |
-|---|---|---|---|---|
-| D1 | 排序 | 展开侧边栏 | Outlook 在鲸湾之上、两者在设置区上方（order 10 < 90） | [手动] |
-| D2 | 高度一致 | 与设置按钮并排比较 | 展开态均 42px 高、12px 圆角、同内边距/字体（回归：曾在纵向 flex 列里被 flex:1 拉伸） | [手动][回归] |
-| D3 | 悬停一致 | 分别悬停三按钮 | 同样的 `--dsw-alias-interactive-bg-hover` 底色（回归：曾用不存在的 --dsh- 变量 + 内联背景覆盖） | [手动][回归] |
-| D4 | 无 dsh-dock 场景 | 停用 dsh-dock 后刷新 | 自带的 `[data-slot]` 堆叠 CSS 使条目仍垂直排列，不塌成横排 | [手动] |
-| D5 | rail 间距 | 收起态对比 | 圆钮边距 `8px 0 10px` 与设置按钮一致 | [手动] |
-
-## E. 服务端路由
-
-| # | 用例 | 步骤 | 预期 | 类型 |
-|---|---|---|---|---|
-| E1 | 方法限制 | POST `/olk-notify/api/state` | 405 | [自动] |
-| E2 | 鉴权 | 无 cookie 请求两个路由 | 401（web 层统一拦截） | [自动] |
-| E3 | beacon 上限 | POST client-log 200KB body | 413，连接关闭，日志不写入 | [自动] |
-| E4 | beacon 噪音 | POST 非 JSON body | 204 静默忽略 | [自动] |
-| E5 | 日志轮转 | 写入 >1MB 后观察 | `.olk-watch-debug.log` 截断重写，不无限增长 | [自动] |
-
-## F. 已知边界（当前设计不处理，避免误报）
-
-- pending ≥ 100 时角标显示实际数字（无 "99+" 截断）——如需可作后续改进；
-- 多浏览器标签页各自轮询，共享同一服务端队列：`check_new` 被任一会话调用后所有页面角标归零；
-- 自发邮件（Send 到自己）NewMailEx 有 ~10-20s 投递延迟，属 Exchange 行为，非插件缺陷。
-
-## G. 点击打开邮件（v2.10.0）
-
-| # | 用例 | 步骤 | 预期 | 类型 |
-|---|---|---|---|---|
-| G1 | 桥 open_mail | search_mail 取 entryId 后直接跑桥 `OLK_ACTION=open_mail` | 桌面 Outlook 弹出检查器窗口，返回 `opened:true` + subject/sender（已实测通过） | [自动] |
-| G2 | 工具 | 调用 `outlook_open_mail` | 同 G1，纯本地无确认门 | [自动] |
-| G3 | POST-only 路由 | GET `/olk-notify/open?entryId=<合法id>`（模拟修饰键/中键导航） | 405，不触桥（v2.11.0 移除 GET 降级，有意行为） | [自动] |
-| G4 | 弹层点击 | 侧边栏弹层中点击一封邮件 | POST 成功，条目立即从列表移除、角标即时减 1；桌面弹出邮件窗口 | [手动] |
-| G5 | entryId 白名单 | POST `/olk-notify/open` body `{"entryId":"<script>"}` | 400 / `{"ok":false,"error":"invalid entryId"}`，不触桥 | [自动] |
-| G6 | POST body 上限 | POST >8KB body | 413，连接关闭 | [自动] |
-| G7 | 跨域 Origin | 携带异源 Origin 头请求三个 olk-notify 路由 | 403 | [自动] |
-| G8 | GBK 代码页回归 | 在系统代码页为 GBK 的 shell 里跑桥 | 解析成功无乱码（回归：无 BOM UTF-8 曾被 PS5.1 按 ANSI 误读致整文件解析失败，已加 BOM 修复并实测通过） | [自动][回归] |
-| G9 | 打开即已读 | 打开一封 unread:true 的邮件后用 search_mail 复查 | 桥返回 `wasUnread:true`；复查该邮件 `unread:false`（已实测通过）。注意：edit 工具重写 ps1 会剥掉 BOM，改后必须重新补 BOM | [自动] |
-| G10 | 角标同步减 1 | 打开 pending 中的一封（弹层点击或会话链接） | host 从 notify.pending 移除该 entryId 且 unread--；弹层本地列表即时移除；其它标签页 ≤20s 轮询后一致 | [自动][手动] |
-
-## H. 聊天链接点击拦截（v2.11.0）
-
-| # | 用例 | 步骤 | 预期 | 类型 |
-|---|---|---|---|---|
-| H1 | 普通左键 | 聊天中点击 `[打开](…/olk-notify/open?entryId=…)` | 不开新标签页；同源 POST 发出，桌面弹出邮件窗口，页面底部 2.6s toast 显示"已在 Outlook 中打开 + 主题" | [手动] |
-| H2 | 任意端口命中 | 链接指向非当前端口（如 :9999）时普通左键点击 | 仍被拦截并打向页面自身 origin，行为同 H1（修复自定义端口部署的死链） | [手动] |
-| H3 | 修饰键导航 | Ctrl/⌘/Shift 点或中键点击同一链接 | 不拦截，浏览器导航得到 405（POST-only，有意行为） | [手动] |
-| H4 | 失败反馈 | 点击 entryId 已失效（邮件被删）的链接 | toast 显示"打开失败 + 错误"，beacon 上报 client-log | [手动] |
-| H5 | 清理可逆 | 停用/更新插件（或刷新前） | 点击拦截监听器、toast 定时器与残留 toast 节点全部移除 | [自动] |
-| H6 | 非 olk 链接不受影响 | 点击聊天里其它任意 markdown 链接 | 默认行为不变（不 preventDefault） | [手动] |
+Labels: `[auto]` can be checked with a script or tool; `[manual]` needs eyes on the browser; `[regression]` corresponds to a defect that really happened.
 
 ---
 
-## 自动化脚本（配合 A 组用例）
+## A. Data path (watcher → state API)
+
+| # | Case | Steps | Expected | Type |
+|---|---|---|---|---|
+| A1 | Single new mail | Send yourself one mail (through the `send_mail` confirmation flow) | Within 20s `GET /olk-notify/api/state` returns `pendingCount:1`, and pending holds the right entryId/subject/sender/received | [auto] |
+| A2 | Batch arrival | One mail cc'ing you, or anything that fires NewMailEx with several EntryIds | One pending entry per EntryId, none lost | [auto] |
+| A3 | `received` is the real time | Look at what A1 returns | Equals the mail's `ReceivedTime`, not the moment the event was handled (regression #7: it once used `Get-Date`) | [auto][regression] |
+| A4 | Watcher self-heals | `taskkill` the watcher's powershell process | The debug log records the exit, a respawn happens within 30s, `hello` comes back, and the state route keeps answering meanwhile (with the stale unread value) | [auto] |
+| A5 | Outlook not running | Quit Outlook, restart DSH | The watcher waits without crashing; once Outlook starts, `hello` arrives with the correct unread count | [manual] |
+| A6 | Pending cap | Simulate more than 50 unconsumed arrivals | The queue keeps the newest 50 (`shift()` drops the oldest) and the count reads 50 | [auto] |
+| A7 | `check_new` clears | With a non-empty queue, call `outlook_check_new` | Returns every pending entry with a matching `count`; a second call returns `count:0`; the badge disappears on the next poll | [auto] |
+| A8 | Watcher off switch | Set `OLK_WATCH=0`, restart DSH | The watcher does not start, `state` returns `pendingCount:0` and `unread:null`, every other tool still works | [manual] |
+
+## B. Badge rendering (client.js NewMailRow)
+
+| # | Case | Steps | Expected | Type |
+|---|---|---|---|---|
+| B1 | Zero state hidden | `pendingCount:0` | Badge hidden; the button shows only the icon and "Outlook" | [manual] |
+| B2 | Digit centred | pending=1 | "1" is centred both ways inside the 16px red circle (regression: `text-align`/`line-height` once pushed it off centre) | [manual][regression] |
+| B3 | Two digits | pending≥10 | `min-width:16px` plus `padding:0 4px` widens the pill and the number stays centred | [manual] |
+| B4 | Badge not clipped | Look at the badge while expanded | The part sticking out of the button (`top:-4px;right:-4px`) renders in full (regression: the button's `overflow:hidden` once cut the corner off) | [manual][regression] |
+| B5 | Poll period | Send a mail, time it | The badge appears within 20s (`POLL_MS=20000`) | [manual] |
+| B6 | Collapsed rail | Collapse the sidebar | The badge still shows at the top-right of the 36px circle and does not cover the icon | [manual] |
+| B7 | Tooltip | Hover the button | The title lists the newest 8 as `[sender] subject`; with nothing new it reads "Outlook mail (nothing new)" | [manual] |
+| B8 | ARIA | Inspect the button | `aria-label` is "Outlook, N new" (or "Outlook mail" at 0), and `aria-haspopup:dialog` is set | [manual] |
+| B9 | Polling across a server restart | Watch while DSH restarts | A failed fetch is swallowed silently; the next poll after recovery works, with no error spam | [manual] |
+
+## C. Popover
+
+| # | Case | Steps | Expected | Type |
+|---|---|---|---|---|
+| C1 | Open | Click the button | The popover appears 8px to the right of the button, titled "📬 New mail (N)", listing the newest 10 (sender / subject / time) | [manual] |
+| C2 | Close by outside click | Click anywhere outside | The popover is removed at once and the document listener is unbound | [manual] |
+| C3 | Close by toggle | Click the button again | The popover closes (the button click does not also trigger C2) | [manual] |
+| C4 | Empty list | Click with pending=0 | Shows "New mail (0)" and the hint "Click a mail to open it in Outlook; ask "anything new?" in chat to read and clear the queue" | [manual] |
+| C5 | Unload cleanup | Disable the plugin or reload the page | Popover, button and the `dsh-outlook-styles` tag are all gone, with no DOM left behind | [manual] |
+
+## D. Coexistence and style regressions (slot rewrite, v2.6.0)
+
+| # | Case | Steps | Expected | Type |
+|---|---|---|---|---|
+| D1 | Ordering | Expand the sidebar | Outlook sits above Whale Bay, both above the settings area (`order` 10 < 90) | [manual] |
+| D2 | Same height | Compare side by side with the settings button | Both are 42px tall with 12px radius and identical padding and font (regression: `flex:1` in the vertical flex column once stretched it) | [manual][regression] |
+| D3 | Same hover | Hover all three buttons | The same `--dsw-alias-interactive-bg-hover` background (regression: once used a non-existent `--dsh-` variable plus an inline background that overrode the stylesheet) | [manual][regression] |
+| D4 | With dsh-dock disabled | Disable dsh-dock, reload | The plugin's own `[data-slot]` stacking CSS keeps the entries vertical instead of collapsing them into a row | [manual] |
+| D5 | Rail spacing | Compare while collapsed | The circle's margin is `8px 0 10px`, matching the settings button | [manual] |
+
+## E. Server routes
+
+| # | Case | Steps | Expected | Type |
+|---|---|---|---|---|
+| E1 | Method restriction | POST `/olk-notify/api/state` | 405 | [auto] |
+| E2 | Auth | Request both routes without a cookie | 401 (the web layer intercepts uniformly) | [auto] |
+| E3 | Beacon cap | POST a 200KB body to client-log | 413, connection closed, nothing written to the log | [auto] |
+| E4 | Beacon noise | POST a non-JSON body | 204, ignored silently | [auto] |
+| E5 | Log rotation | Write past 1MB and look | The debug log is truncated and rewritten; it does not grow without bound | [auto] |
+
+## F. Known boundaries (by design — do not file these)
+
+- At pending ≥ 100 the badge shows the real number (no "99+" clamp); a clamp would be a reasonable future change.
+- Several browser tabs poll independently and share one server-side queue: once any session calls `check_new`, every page's badge goes to zero.
+- A mail you send to yourself has a 10-20s NewMailEx delivery delay. That is Exchange behaviour, not a plugin defect.
+
+## G. Click-to-open (v2.10.0)
+
+| # | Case | Steps | Expected | Type |
+|---|---|---|---|---|
+| G1 | Bridge `open_mail` | Get an entryId from `search_mail`, run the bridge with `OLK_ACTION=open_mail` | A desktop Outlook inspector opens and the bridge returns `opened:true` with subject/sender (verified live) | [auto] |
+| G2 | Tool | Call `outlook_open_mail` | Same as G1; purely local, no confirmation gate | [auto] |
+| G3 | POST-only route | GET `/olk-notify/open?entryId=<valid id>` (simulating modifier-click navigation) | 405, the bridge is not touched (v2.11.0 removed the GET fallback; deliberate) | [auto] |
+| G4 | Popover click | Click a mail inside the sidebar popover | POST succeeds, the entry leaves the list immediately and the badge decrements at once; the desktop opens the mail | [manual] |
+| G5 | entryId allowlist | POST `{"entryId":"<script>"}` to `/olk-notify/open` | 400 / `{"ok":false,"error":"invalid entryId"}`, bridge untouched | [auto] |
+| G6 | POST body cap | POST a body larger than 8KB | 413, connection closed | [auto] |
+| G7 | Cross-origin | Send a foreign Origin header to all three olk-notify routes | 403 | [auto] |
+| G8 | GBK code page regression | Run the bridge from a shell whose system code page is GBK | Parses with no mojibake (regression: a BOM-less UTF-8 file was once read as ANSI by PS 5.1 and the whole file failed to parse; fixed with a BOM and verified live) | [auto][regression] |
+| G9 | Opening marks read | Open a mail whose `unread:true`, then re-check it with `search_mail` | The bridge returns `wasUnread:true`; the mail now reads `unread:false` (verified live). Note: an editor that rewrites the ps1 strips the BOM — restore it after any edit | [auto] |
+| G10 | Badge decrements | Open one entry that is in pending (popover or chat link) | The host removes that entryId from `notify.pending` and decrements unread; the popover list drops it at once; other tabs agree within 20s | [auto][manual] |
+
+## H. Chat link interception (v2.11.0)
+
+| # | Case | Steps | Expected | Type |
+|---|---|---|---|---|
+| H1 | Plain left click | Click `[Open](…/olk-notify/open?entryId=…)` in chat | No new tab; a same-origin POST fires, the desktop opens the mail, and a 2.6s toast at the bottom says "Opened in Outlook: " plus the subject | [manual] |
+| H2 | Any port | The link names a port other than the current one (e.g. :9999); plain left click | Still intercepted and posted to the page's own origin, exactly as H1 (this fixed dead links on custom-port deployments) | [manual] |
+| H3 | Modifier navigation | Ctrl/⌘/Shift-click or middle-click the same link | Not intercepted; the browser navigates and gets 405 (POST-only; deliberate) | [manual] |
+| H4 | Failure feedback | Click a link whose entryId no longer resolves (mail deleted) | The toast says "Could not open: " plus the error, and a beacon reports to client-log | [manual] |
+| H5 | Cleanup is reversible | Disable or update the plugin (or reload) | The click listener, the toast timer and any leftover toast node are all removed | [auto] |
+| H6 | Other links unaffected | Click any other markdown link in a chat message | Default behaviour; no `preventDefault` | [manual] |
+
+---
+
+## Helper scripts (for group A)
 
 ```powershell
-# 状态断言：期望 pendingCount = N
+# State assertion: expect pendingCount = N
 $v = '<cookie>'; (Invoke-RestMethod -Headers @{Cookie=$v} 'http://127.0.0.1:3080/olk-notify/api/state').pendingCount
 
-# watcher 存活断言
-(Get-Process powershell | Measure-Object).Count -ge 2  # 桥接/watcher 至少可存在
+# Watcher liveness
+(Get-Process powershell | Measure-Object).Count -ge 2  # bridge + watcher can coexist
 
-# 触发一封真实新邮件：在会话中调用 outlook_send_mail（需用户确认）后执行 A1 断言
+# Trigger a real new mail: call outlook_send_mail in a session (needs user confirmation), then run the A1 assertion
 ```

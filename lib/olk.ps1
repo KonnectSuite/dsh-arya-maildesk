@@ -1,4 +1,4 @@
-﻿# dsh-outlook Outlook COM bridge dispatcher.
+﻿﻿# dsh-outlook Outlook COM bridge dispatcher.
 # Invoked as: powershell -NoProfile -Command "Invoke-Expression (Get-Content -Raw <this file>)"
 # Input:  $env:OLK_ACTION = action name; arguments as ONE JSON OBJECT on STDIN
 #         (stdin transport — Windows env vars cap near 32 KB and a large mail
@@ -101,15 +101,17 @@ try {
       if ($limit -lt 1) { $limit = 1 }
       if ($limit -gt 50) { $limit = 50 }
       # Folder resolution: well-known defaults by name, otherwise a path
-      # ("Inbox/ProjectA", "已发送/子目录") walked segment by segment from
+      # ("Inbox/ProjectA", "Sent Items/2026") walked segment by segment from
       # the primary store root. A missing segment throws with the segment
       # name, so a typo fails loudly instead of searching the wrong folder.
+      # TODO(fork): list_mail/move_mail call Resolve-Folder; fold this inline copy
+      # into it once the new actions are verified against a real Outlook.
       $folderSpec = if ($args_.folder) { ([string]$args_.folder) -replace '/', '\' } else { 'Inbox' }
-      if ($folderSpec -ieq 'Inbox' -or $folderSpec -ieq '收件箱') {
+      if ($folderSpec -ieq 'Inbox') {
         $folder = $ns.GetDefaultFolder(6)
-      } elseif ($folderSpec -ieq 'Sent Items' -or $folderSpec -ieq 'Sent' -or $folderSpec -ieq '已发送' -or $folderSpec -ieq '已发送邮件') {
+      } elseif ($folderSpec -ieq 'Sent Items' -or $folderSpec -ieq 'Sent') {
         $folder = $ns.GetDefaultFolder(5)
-      } elseif ($folderSpec -ieq 'Drafts' -or $folderSpec -ieq '草稿') {
+      } elseif ($folderSpec -ieq 'Drafts') {
         $folder = $ns.GetDefaultFolder(16)
       } else {
         $f = $ns.Folders.Item(1)
@@ -117,9 +119,9 @@ try {
         if ($segs.Count -gt 0) {
           # First segment may name a well-known default folder; start the
           # walk there so "Inbox/ProjectA" works on localized profiles too.
-          if ($segs[0] -ieq 'Inbox' -or $segs[0] -ieq '收件箱') { $f = $ns.GetDefaultFolder(6); $segs = @($segs | Select-Object -Skip 1) }
-          elseif ($segs[0] -ieq 'Sent Items' -or $segs[0] -ieq 'Sent' -or $segs[0] -ieq '已发送' -or $segs[0] -ieq '已发送邮件') { $f = $ns.GetDefaultFolder(5); $segs = @($segs | Select-Object -Skip 1) }
-          elseif ($segs[0] -ieq 'Drafts' -or $segs[0] -ieq '草稿') { $f = $ns.GetDefaultFolder(16); $segs = @($segs | Select-Object -Skip 1) }
+          if ($segs[0] -ieq 'Inbox') { $f = $ns.GetDefaultFolder(6); $segs = @($segs | Select-Object -Skip 1) }
+          elseif ($segs[0] -ieq 'Sent Items' -or $segs[0] -ieq 'Sent') { $f = $ns.GetDefaultFolder(5); $segs = @($segs | Select-Object -Skip 1) }
+          elseif ($segs[0] -ieq 'Drafts') { $f = $ns.GetDefaultFolder(16); $segs = @($segs | Select-Object -Skip 1) }
         }
         foreach ($seg in $segs) {
           try { $f = $f.Folders.Item($seg) } catch { throw "folder not found: '$seg' (in path '$folderSpec')" }
@@ -508,7 +510,7 @@ try {
       $ascii = $q -match '^[A-Za-z0-9.@_\-]+$'
       $rx = [regex]::Escape($q)
       $gal = $null
-      foreach ($al in $ns.AddressLists) { if ($al.Name -match 'Global|全局') { $gal = $al; break } }
+      foreach ($al in $ns.AddressLists) { if ($al.Name -match 'Global') { $gal = $al; break } }
       if (-not $gal) { $gal = @($ns.AddressLists)[0] }
       $people = @()
       foreach ($e in $gal.AddressEntries) {
@@ -589,8 +591,8 @@ try {
       $t2 = if ($args_.end) { [string]$args_.end } else { '18:00' }
       if ($dt -ne '' -and $dt -notmatch '^\d{4}-\d{2}-\d{2}$') { throw "date must be yyyy-MM-dd" }
       $roomList = $null
-      foreach ($al in $ns.AddressLists) { if ($al.Name -match 'Room|会议室') { $roomList = $al; break } }
-      if (-not $roomList) { throw 'no room address list found (looked for address lists named Room/会议室)' }
+      foreach ($al in $ns.AddressLists) { if ($al.Name -match 'Room') { $roomList = $al; break } }
+      if (-not $roomList) { throw 'no room address list found (looked for an address list named Room)' }
       $rx = $null
       if ($q -ne '') { $rx = [regex]::Escape($q) }
       $rooms = @()

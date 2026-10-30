@@ -306,7 +306,8 @@ silently.
    message, not a soak test: attachments, non-Exchange recipients and the programmatic-send prompt under other
    Outlook security settings have not been tried.
 2. **User-visible strings are English only.** No locale layer, no `locale/*.json`. Deliberate deviation from
-   the market's localisation gate, recorded rather than hidden; first item for 1.1.0.
+   the market's localisation gate, recorded rather than hidden. Carried into 1.1.0 unresolved, so it is the
+   first item for 1.2.0.
 3. **`TESTCASES.md`'s 49 cases were inherited** and run by upstream's author. Post-fork actions have no case
    of their own; the ladder above is the substitute until they do.
 4. **Classic Outlook only.** No Graph or IMAP provider. The seam exists (`fixture` vs bridge); a second
@@ -403,6 +404,6 @@ Open:
 3. **The remaining Outlook-isms**: sort by conversation, unread counts per thread, "show only this conversation",
    and a configurable reading-pane position.
 4. A morning-brief prompt/tool built on `list_mail` + `read_mail` — daily value with no new UI.
-5. 1.1.0: localisation layer, then the localisation gate can be honoured.
+5. 1.2.0: localisation layer, then the market's localisation gate can be honoured (1.1.0 shipped without it).
 6. Optional, decision pending: a `graph` provider for the new Outlook, which needs IT consent on a corporate
    tenant and no consent at all on personal accounts.

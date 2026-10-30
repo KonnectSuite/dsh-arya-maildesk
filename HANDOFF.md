@@ -110,19 +110,26 @@ on the real mailbox, the rest have not:
 | No classic Outlook | the panel names the reason instead of reporting zero mail (`docs/panel-new-outlook.png`) |
 | Sample mailbox | `SAMPLE MAIL` pill, **Preview with sample mail** / **Back to live mail**, whole mailbox on a PC with no Outlook (`docs/panel-sample-mail.png`) |
 
-Offline — **150 assertions** in all:
+Offline — **184 assertions** in all:
 
-- `npm test` — bundle guard (**15** checks) + **59** PowerShell assertions: 14 in
-  `test/folder-resolution.test.ps1`, 45 in `test/mail-actions.test.ps1` against a fake COM object model.
+- `npm test` — bundle guard (**15** checks) + **65** PowerShell assertions: 14 in
+  `test/folder-resolution.test.ps1`, 45 in `test/mail-actions.test.ps1` against a fake COM object model, and 6 in
+  `test/bridge-scope.test.ps1`, which fails if a `$outlook.<method>` call reappears outside `Connect-Outlook`
+  (the bug that broke every fresh draft and send on 2026-10-30), if `CreateItem` stops going through the parked
+  application object, or if either send gate loses its `OLK_CONFIRM` check.
 - `node test/panel-api.test.mjs` — **29** assertions driving the real host routes with fake `req`/`res`.
-- `node test/ask-route.test.mjs` — **19** assertions with a stub session controller: one session created and
-  reused, the panel context travels with the question, tool calls are named, transport edges stay closed.
+- `node test/ask-route.test.mjs` — **29** assertions with a stub session controller: one session created and
+  reused, the panel context and ground rules travel with the question, tool calls are named, timestamps and the
+  running flag come back, `cancel`/`new` reach the controller, transport edges stay closed.
+- `node test/accounts.test.mjs` — **8** assertions: hiding a store, persistence, and the refusal to hide the last one.
+- `node test/models.test.mjs` — **10** assertions: the model catalog passthrough and selection.
 - `node test/drafts-persist.test.mjs` — **11** assertions: a draft is written to disk on save, a second module
   instance (a restart, in miniature) lists it with its recipients and body, and a discard clears the file.
 - `node test/sample-mail.test.mjs` — **17** assertions: no fixture → the live provider fails loudly (no
   invented empty mailbox) → toggle on → folders, rows, read → toggle off → fails again, plus route guards.
 - `node --check index.js` / `client.js` — the only build gate; there is no bundler and no TypeScript.
 - `node test/resident-live.mjs` — **live only** (needs COM): starts the resident bridge through the real host
+  routes and prints cold vs warm timings. Not part of `npm test`; it is the measurement behind the 10× claim.
   routes and prints cold vs warm timings. Not part of `npm test`; it is the measurement behind the 10× claim.
 
 The resident bridge is killed on plugin dispose (`ctx.effect`), so a reload never leaves a PowerShell holding COM.

@@ -153,6 +153,10 @@ function Connect-Outlook {
     $outlook = New-Object -ComObject Outlook.Application
   }
   $ns = $outlook.GetNamespace('MAPI')
+  # Callers live in another function scope, so the Application object has to be
+  # parked where they can see it: CreateItem belongs to the application, not to
+  # the namespace. A missing reference here was the send path's null dereference.
+  $script:outlookApp = $outlook
   return $ns
 }
 
@@ -318,7 +322,7 @@ function Invoke-OlkAction($ns, $action, $args_) {
     }
 
     'draft_mail' {
-      $draft = $outlook.CreateItem(0)
+      $draft = $script:outlookApp.CreateItem(0)
       if ($args_.to) { $draft.To = [string]$args_.to }
       if ($args_.cc) { $draft.CC = [string]$args_.cc }
       if ($args_.bcc) { $draft.BCC = [string]$args_.bcc }
@@ -375,7 +379,7 @@ function Invoke-OlkAction($ns, $action, $args_) {
         elseif ($mode -eq 'forward') { $item = $base.Forward() }
         else { $item = $base.Reply() }
       } else {
-        $item = $outlook.CreateItem(0)
+        $item = $script:outlookApp.CreateItem(0)
       }
       if ($args_.to) { $item.To = [string]$args_.to }
       if ($args_.cc) { $item.CC = [string]$args_.cc }
@@ -411,7 +415,7 @@ function Invoke-OlkAction($ns, $action, $args_) {
         elseif ($mode -eq 'forward') { $item = $base.Forward() }
         else { $item = $base.Reply() }
       } else {
-        $item = $outlook.CreateItem(0)
+        $item = $script:outlookApp.CreateItem(0)
       }
       if ($args_.to) { $item.To = [string]$args_.to }
       if ($args_.cc) { $item.CC = [string]$args_.cc }
@@ -488,7 +492,7 @@ function Invoke-OlkAction($ns, $action, $args_) {
       if ($parsedEnd -le $parsedStart) {
         throw 'end must be later than start.'
       }
-      $appt = $outlook.CreateItem(1)  # olAppointmentItem
+      $appt = $script:outlookApp.CreateItem(1)  # olAppointmentItem
       $appt.Subject = [string]$args_.subject
       $appt.Start = $parsedStart
       $appt.End = $parsedEnd

@@ -340,6 +340,24 @@ silently.
   `%LOCALAPPDATA%\AryaCode-dev\home` does not exist and `%USERPROFILE%\.aryacode\profiles\` holds only
   `desktop`, so there the installed package is the only lane.
 
+## Session close (2026-10-30)
+
+Delivered and verified on the work laptop's **real mailbox**: the panel opens in ~1 s (cold 1.3 s, warm 0.15 s
+per call), the rail is lazy and remembers its shape, search / mark-read / move / delete / reply all work against
+live mail, unsent drafts survive a restart, replies are addressed through Exchange, and the agent runs **inside
+the Mail page** with one-click asks that carry the selected `entryId`.
+
+Evidence: **150 offline assertions**, plus the live ladder through rung 8, plus the send *gates* run for real
+(no hash → `needs-confirmation` with preview and content hash; wrong hash → refused, draft intact; no bridge token
+→ `SEND BLOCKED`). `node test/resident-live.mjs` prints the bridge timings.
+
+Open, and both need a human:
+
+- **the final send dispatch has never run** — deliberately: the gate exists so an agent cannot send without its
+  owner's approval, and the owner has not given one yet. Everything up to transmission is proven.
+- **1.0.4 is built and installed here but not on npm** — this machine has no npm credential (`~/.npmrc`,
+  `%APPDATA%\npm`, `NPM_TOKEN` and the KonnectSuite tree are all empty; `gh` is authenticated, npm is not).
+
 ## Next, in priority order
 
 1. **Rungs 6–9** (move, delete, compose, send) on the work laptop; record where it diverges. Reads already pass.

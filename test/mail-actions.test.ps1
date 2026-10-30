@@ -1,4 +1,4 @@
-﻿# Offline behaviour tests for the five new bridge actions.
+# Offline behaviour tests for the five new bridge actions.
 # No Outlook: the COM object model is faked. The REAL case bodies are extracted
 # from lib/olk.ps1 and executed, so the tests exercise shipped code.
 $ErrorActionPreference = 'Stop'
@@ -21,6 +21,7 @@ function Get-CaseText([string]$name) {
   return (Get-BraceText $start)
 }
 Invoke-Expression (Get-BraceText ($src.IndexOf('function Resolve-Folder')))
+Invoke-Expression (Get-BraceText ($src.IndexOf('function New-FolderRow')))
 
 # ---------------- fake Outlook object model ----------------
 # A folder collection must be BOTH enumerable (list_folders walks it) and

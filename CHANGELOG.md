@@ -2,6 +2,27 @@
 
 This project's version narrative puts **why** before **what**. Every entry starts with the motivation.
 
+## 1.0.4 — The panel opens in seconds, not tens of seconds
+
+**Why**: on a real Exchange mailbox the Mail panel sat on skeleton rows for ~24 s before the first message appeared. The first paint waited for `list_folders` with `maxDepth: 6`, and a folder walk costs one COM read per folder — 545 folders × 30–90 ms ≈ 16 s — on top of ~1.5 s of PowerShell process start and another 2.5 s before the first page of mail. Nothing was broken; everything was slow, which reads the same to a person who just clicked Mail.
+
+**What changed**:
+- `list_folders` answers in two new shapes: `roots: true` (the well-known folders of every store — 0.2 s of COM work, 1.4 s wall including process start) and `parent: <entryId>` (that folder's children — 2.4 s). The whole-tree walk is still there for the tools and the move picker.
+- The panel paints the message list first, resolving `Inbox` by **name** inside the bridge, then asks for the rail. The rail is a lazy tree: a twisty on any folder with children fetches one level on demand.
+- Folder responses are cached in the host for five minutes, keyed by their arguments, so reopening the panel and re-expanding a folder is free.
+- The pager says `Loading…` while a page is in flight instead of `1–0 of 0 · unread count unavailable`, which read as an empty mailbox.
+- `test/sample-mail.test.mjs` no longer fails on a machine that **has** classic Outlook: its "no COM" assertion adapts when the live provider answers, so the suite is honest on both kinds of machine.
+- **An agent inside the Mail page.** `Ask` opens a drawer under the mailbox: the question goes to `/maildesk/api/ask`, the host runs a real harness session (the `sessionController` service, not a second model client) with the same `maildesk_*` tools and the same human gates, and the panel reads the transcript back and renders it beside the mail. The harness's own context injections are filtered out, so the drawer shows only what was asked and what came back.
+- `test/ask-route.test.mjs` — 19 assertions against a stub controller: one session created and reused, the panel context travels with the question, tool calls are named while blank messages are dropped, and the transport edges stay closed.
+- **The panel agent got memory and an audit trail.** Its session id is written to `%TEMP%\dsh-arya-maildesk-ask.json` and reused, so it is one `Mail assistant` conversation rather than a new one per restart (a stale id is retired and retried once). The transcript shows the tools it called, and the question carries the selected mail's `entryId`, so "reply to this one" resolves without a search.
+- Cached folder counts are dropped whenever a write lands (`mark_read`, `move_mail`, `delete_mail`), so the rail can no longer argue with the list for five minutes.
+
+**Measured** (work laptop, three stores, 545 folders): first mail **3 s** (was 24 s), rail **1.5 s**, one expand **2.5 s**, reopen **<0.1 s** from the host cache. In the Mail page, "how many unread mails are in my Inbox?" answered **141** from the tools, and "name the newest unread mail" returned sender, subject and date — both without leaving the panel.
+
+**Verified on the real mailbox**: `mark_read` took the Inbox from 141 unread to 140 and back to 141 with the change confirmed by a fresh folder read, and the panel's **Reply** opened a prefilled draft (To, `RE:` subject, quoted original) that was discarded without creating an Outlook item. Move, delete and send remain unrun there.
+
+**Not published yet** — this build went into the work laptop's profile as a local tarball (`pnpm add file:…`) because this machine has no npm credentials. The next publish takes it to 1.0.4 on npm and the market.
+
 ## 1.0.3 — A mailbox you can look at, on a machine with no Outlook
 
 **Why**: installing the plugin on a PC whose Outlook is the new WebView2 client produced a correct panel and nothing to look at — a banner, disabled buttons, and an empty list. That is honest, but it is also the first thing a new user sees, and "nothing is working" is the only reasonable reading. The fixture already existed for exactly this (`MAILDESK_FIXTURE=1`), but an environment variable is not something a person installing from the market can set. The panel now offers the sample mailbox itself.

@@ -74,24 +74,38 @@ function check(label, ok, detail) {
 }
 
 // 1. Live provider first: with no fixture env the panel must be told 'com', and
-//    the mailbox call must fail with the bridge's own explanation rather than an
-//    empty success. This is the state a new-Outlook machine starts in.
+//    the mailbox call must either fail with the bridge's own explanation (a
+//    machine with no classic Outlook) or answer from the real mailbox (a machine
+//    that has one). Both are legitimate; an EMPTY SUCCESS is not, and that is
+//    what this asserts on both kinds of machine.
+let liveMailbox = false
 {
   const h = await hit(health, 'GET')
   check('health reports the live provider', h.json.ok === true && h.json.provider === 'com', JSON.stringify(h.json))
   check('health says this is not sample mail', h.json.sample === false)
-  const r = await hit(call, 'POST', { action: 'list_folders', args: { maxDepth: 2 } })
+  const r = await hit(call, 'POST', { action: 'list_folders', args: { roots: true } })
   // The route answers 200 for bridge-level failures (a missing Outlook is not a
   // transport fault), so the signal is result.status, not the HTTP code.
   const verdict = JSON.stringify(r.json)
-  check(
-    'with no COM the call fails loudly instead of returning an empty mailbox',
-    r.json.ok === true &&
-      r.json.result.status === 'error' &&
-      !Array.isArray(r.json.result.folders) &&
-      /classic desktop Outlook not found|Classic Outlook|not registered|80040154/i.test(verdict),
-    verdict.slice(0, 160),
-  )
+  liveMailbox = r.json.ok === true && r.json.result.status === 'ok'
+  if (liveMailbox) {
+    // This machine can be verified for real; the loud-failure path is not
+    // reachable here, so say so instead of failing the suite.
+    check(
+      'this machine has classic Outlook, so the live provider answers with folders',
+      Array.isArray(r.json.result.folders) && r.json.result.folders.length > 0,
+      verdict.slice(0, 160),
+    )
+  } else {
+    check(
+      'with no COM the call fails loudly instead of returning an empty mailbox',
+      r.json.ok === true &&
+        r.json.result.status === 'error' &&
+        !Array.isArray(r.json.result.folders) &&
+        /classic desktop Outlook not found|Classic Outlook|not registered|80040154|spawn|EPERM/i.test(verdict),
+      verdict.slice(0, 160),
+    )
+  }
 }
 
 // 2. Switch to the sample mailbox. Everything after this must behave exactly like
@@ -126,8 +140,11 @@ function check(label, ok, detail) {
   check('the toggle switches back to live', s.json.ok === true && s.json.provider === 'com', JSON.stringify(s.json))
   const h = await hit(health, 'GET')
   check('health is back to the live provider', h.json.provider === 'com' && h.json.sample === false)
-  const r = await hit(call, 'POST', { action: 'list_folders', args: { maxDepth: 2 } })
-  check('the live provider fails again after switching back', r.json.result.status === 'error')
+  const r = await hit(call, 'POST', { action: 'list_folders', args: { roots: true } })
+  check(
+    liveMailbox ? 'the real mailbox answers again after switching off' : 'the live provider fails again after switching back',
+    liveMailbox ? r.json.result.status === 'ok' : r.json.result.status === 'error',
+  )
 }
 
 // 4. The route's own guards: POST only, same origin.

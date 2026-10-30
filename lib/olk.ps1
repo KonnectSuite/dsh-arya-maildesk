@@ -20,6 +20,28 @@ function Out-Json($obj) {
   $obj | ConvertTo-Json -Depth 6
 }
 
+function New-FolderRow($f, $store, $depth, $withCounts) {
+  # One rail row. Enumerating a whole Exchange mailbox costs one COM read per
+  # folder (30-90 ms each: 545 folders = 16 s), so the panel asks for the
+  # well-known folders first and expands one folder at a time on demand.
+  $cnt = 0
+  $unc = 0
+  if ($withCounts) {
+    try { $cnt = [int]$f.Items.Count } catch {}
+    try { $unc = [int]$f.UnReadItemCount } catch {}
+  }
+  return [ordered]@{
+    entryId    = [string]$f.EntryID
+    name       = [string]$f.Name
+    path       = ([string]$f.FolderPath -replace '/', '\')
+    store      = [string]$store
+    depth      = [int]$depth
+    childCount = [int]$f.Folders.Count
+    itemCount  = $cnt
+    unread     = $unc
+  }
+}
+
 function Resolve-Folder($ns, $spec) {
   # Resolve a folder to a Folder object. Accepted forms, in order:
   #   - a folder entryId from list_folders (>= 60 chars)
@@ -877,40 +899,51 @@ try {
     # ------------------------------------------------------------------
 
     'list_folders' {
-      # Folder tree of every store in the profile, for the GUI folder pane.
-      # Counts cost one COM read per folder; pass counts=false on very large
-      # mailboxes and fetch them lazily per folder instead.
+      # Folder tree, in three shapes:
+      #   roots:true        -> the well-known folders of every store (~0.2 s);
+      #                        this is what the panel paints first
+      #   parent:<entryId>  -> just that folder's children; one lazy expand
+      #   (neither)         -> the whole tree, breadth-first, counts optional
+      # A full walk costs one COM read per folder (30-90 ms each on a real
+      # Exchange store: 545 folders = 16 s), so no first paint asks for it.
       $maxDepth = if ($args_.maxDepth) { [int]$args_.maxDepth } else { 6 }
       $withCounts = $true
       if ($null -ne $args_.counts) { $withCounts = [bool]$args_.counts }
       $folders = @()
-      $q = New-Object System.Collections.Queue
-      foreach ($st in $ns.Folders) {
-        $q.Enqueue((New-Object psobject -Property @{ F = $st; D = 0; S = [string]$st.Name }))
-      }
-      while ($q.Count -gt 0) {
-        $node = $q.Dequeue()
-        $f = $node.F
-        $d = [int]$node.D
-        $cnt = 0
-        $unc = 0
-        if ($withCounts) {
-          try { $cnt = [int]$f.Items.Count } catch {}
-          try { $unc = [int]$f.UnReadItemCount } catch {}
+      if ($args_.parent) {
+        $parent = Resolve-Folder $ns ([string]$args_.parent)
+        $storeName = ''
+        try { $storeName = [string]$parent.Store.DisplayName } catch {}
+        foreach ($c in $parent.Folders) {
+          $folders += New-FolderRow $c $storeName 0 $withCounts
         }
-        $folders += [ordered]@{
-          entryId    = [string]$f.EntryID
-          name       = [string]$f.Name
-          path       = ([string]$f.FolderPath -replace '/', '\')
-          store      = [string]$node.S
-          depth      = $d
-          childCount = [int]$f.Folders.Count
-          itemCount  = $cnt
-          unread     = $unc
+      } elseif ($args_.roots -eq $true) {
+        # 6 Inbox, 5 Sent Items, 16 Drafts, 3 Deleted Items, 4 Outbox, 23 Junk
+        $wellKnown = @(6, 5, 16, 3, 4, 23)
+        foreach ($st in $ns.Folders) {
+          $store = $st.Store
+          $storeName = ''
+          try { $storeName = [string]$store.DisplayName } catch { $storeName = [string]$st.Name }
+          foreach ($id in $wellKnown) {
+            try {
+              $folders += New-FolderRow ($store.GetDefaultFolder($id)) $storeName 1 $withCounts
+            } catch { }
+          }
         }
-        if ($d -lt $maxDepth) {
-          foreach ($c in $f.Folders) {
-            $q.Enqueue((New-Object psobject -Property @{ F = $c; D = ($d + 1); S = [string]$node.S }))
+      } else {
+        $q = New-Object System.Collections.Queue
+        foreach ($st in $ns.Folders) {
+          $q.Enqueue((New-Object psobject -Property @{ F = $st; D = 0; S = [string]$st.Name }))
+        }
+        while ($q.Count -gt 0) {
+          $node = $q.Dequeue()
+          $f = $node.F
+          $d = [int]$node.D
+          $folders += New-FolderRow $f ([string]$node.S) $d $withCounts
+          if ($d -lt $maxDepth) {
+            foreach ($c in $f.Folders) {
+              $q.Enqueue((New-Object psobject -Property @{ F = $c; D = ($d + 1); S = [string]$node.S }))
+            }
           }
         }
       }

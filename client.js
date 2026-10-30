@@ -30,6 +30,9 @@ window.__ModuleLoader__.load({
     const STATE_URL = '/olk-notify/api/state'
     const CALL_URL = '/maildesk/api/call'
     const HEALTH_URL = '/maildesk/api/health'
+    // First paint resolves the default Inbox by NAME, before the folder tree is
+    // known; entryIds replace it as soon as a person picks a folder.
+    const INBOX = 'Inbox'
     const POLL_MS = 20000
 
     /** Lifecycle beacon → host debug file (diagnostics; silent on failure). */
@@ -200,6 +203,12 @@ window.__ModuleLoader__.load({
         '.md-folder:hover{background:var(--dsw-alias-interactive-bg-hover,#f2f2f2)}',
         '.md-folder.on{background:#3b6ef514;color:#2350c9;font-weight:600}',
         '.md-folder-name{flex:1 1 auto;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}',
+    // Lazy tree: a twisty that loads one level of children on demand. The rail
+    // used to walk the whole mailbox (545 folders = 16 s); now it paints the
+    // well-known folders and expands only what a person opens.
+    '.md-twisty{flex:none;width:11px;text-align:center;font-size:9px;opacity:.55;transition:transform .12s;transform:rotate(0deg)}',
+    '.md-twisty.open{transform:rotate(90deg)}',
+    '.md-twisty.empty{opacity:0;cursor:default}',
         '.md-count{font-size:10.5px;opacity:.7;flex:none}',
         '.md-unread{font-size:10.5px;font-weight:700;color:#2350c9;flex:none}',
         '.md-list{flex:1 1 44%;min-width:320px;display:flex;flex-direction:column;border-right:1px solid var(--dsw-alias-border-subtle,#e6e6e6);min-height:0}',
@@ -242,7 +251,19 @@ window.__ModuleLoader__.load({
         '.md-skel div:nth-child(1){width:34%}.md-skel div:nth-child(2){width:78%}.md-skel div:nth-child(3){width:60%;height:8px}',
         '.md-pager{display:flex;align-items:center;gap:8px;padding:8px 10px;border-top:1px solid var(--dsw-alias-border-subtle,#f0f0f0);font-size:11.5px;opacity:.8;flex:none}',
         '.md-kbd{font-size:10.5px;padding:1px 5px;border-radius:4px;border:1px solid var(--dsw-alias-border-subtle,#d9d9d9);background:#8898ac10}',
-        '@media (max-width:900px){.md-rail{display:none}.md-list{flex-basis:46%}.md-read{min-width:0}}',
+        '.md-ask{border-top:1px solid var(--dsw-alias-border-subtle,#e6e6e6);background:#fafbfc;display:flex;flex-direction:column;max-height:46%;flex:none}',
+    '.md-ask-head{display:flex;align-items:center;gap:8px;padding:6px 10px;font-size:12px}',
+    '.md-ask-sub{opacity:.6;font-size:11px}',
+    '.md-ask-log{overflow:auto;padding:6px 10px;display:flex;flex-direction:column;gap:6px;min-height:60px}',
+    '.md-ask-msg{padding:6px 9px;border-radius:8px;font-size:12.5px;white-space:pre-wrap;max-width:86%;line-height:1.4}',
+    '.md-ask-msg.user{align-self:flex-end;background:#3b6ef514;color:#2350c9}',
+    '.md-ask-msg.assistant{align-self:flex-start;background:#fff;border:1px solid #e6e6e6}',
+    '.md-ask-msg.tool{align-self:flex-start;background:transparent;border:1px dashed #d8dde5;color:#555;font-size:11.5px;padding:2px 7px}',
+    '.md-ask-empty{opacity:.65;font-size:12px;line-height:1.45}',
+    '.md-ask-err{color:#e5484d;font-size:12px}',
+    '.md-ask-compose{display:flex;gap:8px;padding:8px 10px;align-items:flex-end}',
+    '.md-ask-input{flex:1 1 auto;font:inherit;font-size:12.5px;padding:6px 8px;border:1px solid #d8dde5;border-radius:8px;resize:vertical;background:#fff}',
+    '@media (max-width:900px){.md-rail{display:none}.md-list{flex-basis:46%}.md-read{min-width:0}}',
       ].join('\n')
       document.head.appendChild(style)
       return style
@@ -548,6 +569,10 @@ window.__ModuleLoader__.load({
 
     function Panel() {
       const [folders, setFolders] = React.useState(null)
+      // Lazy folder tree: children are fetched one folder at a time, so the
+      // rail never waits for a whole-mailbox walk (545 folders = 16 s).
+      const [kids, setKids] = React.useState({})
+      const [openFolders, setOpenFolders] = React.useState({})
       const [folderId, setFolderId] = React.useState(null)
       const [page, setPage] = React.useState({ total: 0, offset: 0, returned: 0, folderPath: '', mails: [], unreadInFolder: -1 })
       const [listState, setListState] = React.useState('loading')
@@ -558,6 +583,16 @@ window.__ModuleLoader__.load({
       const [error, setError] = React.useState('')
       const [busy, setBusy] = React.useState('')
       const [toast, setToast] = React.useState(null)
+      // ---- the agent inside the panel -----------------------------------
+      // The client bundle reaches the same session services the chat UI uses,
+      // so Mail can run a real agent turn with the maildesk_* tools instead of
+      // sending the person back to the workspace chat.
+      const [askOpen, setAskOpen] = React.useState(false)
+      const [askText, setAskText] = React.useState('')
+      const [askLog, setAskLog] = React.useState([])
+      const [askBusy, setAskBusy] = React.useState(false)
+      const [askError, setAskError] = React.useState('')
+      const askEndRef = React.useRef(null)
       const [unreadOnly, setUnreadOnly] = React.useState(false)
       const [sort, setSort] = React.useState('received')
       const [limit, setLimit] = React.useState(100)
@@ -588,9 +623,11 @@ window.__ModuleLoader__.load({
         setTimeout(() => setToast(null), 2800)
       }
 
-      // Load the mailbox: provider label, folder tree, then the first folder.
-      // Extracted so the "Preview with sample mail" button can re-run it after
-      // switching the host's provider.
+      // Load the mailbox: provider label, then the first page of mail, then the
+      // folder tree. The order matters — the tree is the slowest call in the
+      // plugin (one COM read per folder: 545 folders ≈ 16 s on a real Exchange
+      // store), so the list must not wait for it. A folder NAME resolves inside
+      // the bridge, so "Inbox" is enough to start.
       const boot = async () => {
         try {
           const res = await fetch(HEALTH_URL)
@@ -600,18 +637,21 @@ window.__ModuleLoader__.load({
             setSample(data.sample === true)
           }
         } catch { /* keep the com default */ }
+        setFolderId(INBOX)
+        // Let the list effect dispatch its request before the folder walk takes
+        // the bridge queue (the bridge handles one call at a time).
+        await new Promise((resolve) => setTimeout(resolve, 60))
         try {
-          const result = await call('list_folders', { maxDepth: 6 })
+          // Only the well-known folders of each store (~1.4 s). Subfolders are
+          // fetched when a person expands one; the whole-tree walk was 16 s.
+          const result = await call('list_folders', { roots: true })
           const list = Array.isArray(result.folders) ? result.folders : []
           setFolders(list)
-          const first = list.find((f) => /^inbox$/i.test(f.name)) || list[0]
-          if (first) setFolderId(first.entryId)
-          else setListState('empty')
+          if (list.length === 0) setListState((s) => (s === 'loading' ? 'empty' : s))
         } catch (error) {
-          setError(error.message)
+          // A failed folder walk must not blank a list that is already useful.
           setFolders([])
-          setPage({ folderPath: '', total: 0, offset: 0, returned: 0, unreadInFolder: 0 })
-          setListState('error')
+          announce('Folders could not be loaded: ' + error.message, true)
         }
       }
 
@@ -995,30 +1035,156 @@ window.__ModuleLoader__.load({
       const selectionCount = targetIds().length
       const noOutlook = /class not registered|80040154|not found|not installed|cannot create/i.test(error)
 
+      /* ---- in-panel assistant ----------------------------------------- */
+      // Ask posts to the plugin's own host route, which runs a real harness
+      // agent turn in a session of its own and hands back the transcript. This
+      // half never talks to a model directly and needs no session internals.
+      const readAskLog = async () => {
+        try {
+          const res = await fetch('/maildesk/api/ask', { method: 'GET' })
+          const data = await res.json()
+          if (data === null || data.ok !== true) return
+          const list = Array.isArray(data.messages) ? data.messages : []
+          setAskLog(list.map((m) => ({ key: String(m.role) + String(m.seq), role: m.role, text: m.text })))
+        } catch { /* the poll retries */ }
+      }
+
+      const askSend = async () => {
+        const text = askText.trim()
+        if (text === '' || askBusy) return
+        setAskBusy(true)
+        setAskError('')
+        try {
+          const res = await fetch('/maildesk/api/ask', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({
+              text,
+              folderPath: page.folderPath || '',
+              selected: openMail !== null && openMail.subject ? openMail.subject : '',
+              selectedId: openMail !== null && openMail.entryId ? openMail.entryId : '',
+            }),
+          })
+          const data = await res.json().catch(() => null)
+          if (data === null || data.ok !== true) {
+            throw new Error((data && data.error) || ('HTTP ' + res.status))
+          }
+          setAskText('')
+          await readAskLog()
+        } catch (error) {
+          setAskError(error && error.message ? error.message : String(error))
+        } finally {
+          setAskBusy(false)
+        }
+      }
+
+      // Poll while the pane is open: the agent answers asynchronously and the
+      // host owns the session, so a 1.5 s read keeps the two in step.
+      React.useEffect(() => {
+        if (!askOpen) return undefined
+        let live = true
+        let timer = null
+        const tick = async () => {
+          if (!live) return
+          await readAskLog()
+          if (live) timer = setTimeout(() => void tick(), 1500)
+        }
+        void tick()
+        return () => {
+          live = false
+          if (timer !== null) clearTimeout(timer)
+        }
+      }, [askOpen])
+
+      React.useEffect(() => {
+        if (askOpen && askEndRef.current !== null) askEndRef.current.scrollIntoView({ block: 'end' })
+      }, [askOpen, askLog.length])
+
+
+      // While folderId is still the "Inbox" NAME (first paint), no entryId can
+      // match: highlight the folder the page actually came from instead.
+      const isActiveFolder = (f) =>
+        f.entryId === folderId ||
+        (typeof folderId === 'string' && f.path === page.folderPath)
+
+      // One expand = one small bridge call (children of a single folder, ~2 s
+      // including process start) instead of the 16 s whole-tree walk.
+      const toggleFolder = async (f) => {
+        const id = f.entryId
+        if (openFolders[id] === true) {
+          setOpenFolders((o) => ({ ...o, [id]: false }))
+          return
+        }
+        setOpenFolders((o) => ({ ...o, [id]: true }))
+        if (Array.isArray(kids[id])) return
+        try {
+          const result = await call('list_folders', { parent: id })
+          const depth = (f.depth || 0) + 1
+          const list = (Array.isArray(result.folders) ? result.folders : []).map((c) => ({ ...c, depth }))
+          setKids((k) => ({ ...k, [id]: list }))
+        } catch (error) {
+          announce(error.message, true)
+          setOpenFolders((o) => ({ ...o, [id]: false }))
+        }
+      }
+
+      // Everything the panel knows about, in tree order: the roots plus any
+      // level a person has opened. The move picker offers exactly this.
+      const flatFolders = (() => {
+        const out = []
+        const walk = (f) => {
+          out.push(f)
+          const k = kids[f.entryId]
+          if (Array.isArray(k)) for (const c of k) walk(c)
+        }
+        for (const f of folders || []) walk(f)
+        return out
+      })()
+
       const rail = h('div', { className: 'md-rail', role: 'navigation', 'aria-label': 'Folders' },
         folders === null ? [0, 1, 2, 3].map((i) => h('div', { key: i, className: 'md-skel' }, h('div'), h('div'), h('div'))) : null,
         folders !== null ? (() => {
           const out = []
-          let store = null
-          for (const f of folders) {
-            if (f.store !== store) {
-              store = f.store
-              out.push(h('div', { key: 'store-' + store, className: 'md-rail-store' }, store))
+          const seenStore = new Set()
+          const walk = (f) => {
+            if (!seenStore.has(f.store)) {
+              seenStore.add(f.store)
+              out.push(h('div', { key: 'store-' + f.store, className: 'md-rail-store' }, f.store))
             }
+            const id = f.entryId
             const unread = typeof f.unread === 'number' ? f.unread : 0
+            const hasKids = (f.childCount || 0) > 0
+            const expanded = openFolders[id] === true
             out.push(h('button', {
-              key: f.entryId,
+              key: id,
               type: 'button',
-              className: 'md-folder' + (f.entryId === folderId ? ' on' : ''),
+              className: 'md-folder' + (isActiveFolder(f) ? ' on' : ''),
               style: { paddingLeft: 8 + (f.depth || 0) * 12 + 'px' },
               title: f.path,
-              onClick: () => { setFolderId(f.entryId); setSel([]); setOpenId(null); setOpenMail(null); setReadState('idle') },
+              onClick: () => { setFolderId(id); setSel([]); setOpenId(null); setOpenMail(null); setReadState('idle') },
             },
+              h('span', {
+                key: 'tw',
+                className: 'md-twisty' + (hasKids ? '' : ' empty') + (expanded ? ' open' : ''),
+                role: 'button',
+                tabIndex: hasKids ? 0 : -1,
+                'aria-label': (expanded ? 'Collapse ' : 'Expand ') + f.name,
+                onClick: (ev) => { ev.stopPropagation(); if (hasKids) void toggleFolder(f) },
+                onKeyDown: (ev) => {
+                  if (hasKids && (ev.key === 'Enter' || ev.key === ' ')) {
+                    ev.preventDefault()
+                    ev.stopPropagation()
+                    void toggleFolder(f)
+                  }
+                },
+              }, hasKids ? '▸' : ''),
               h(FolderIcon, { size: 13 }),
               h('span', { className: 'md-folder-name' }, f.name),
               unread > 0 ? h('span', { className: 'md-unread' }, String(unread)) : null,
               h('span', { className: 'md-count' }, String(typeof f.itemCount === 'number' ? f.itemCount : ''))))
+            if (expanded && Array.isArray(kids[id])) for (const c of kids[id]) walk(c)
           }
+          for (const f of folders) walk(f)
           return out
         })() : null,
         h('div', { style: { padding: '10px 8px 2px', fontSize: '10.5px', opacity: .6 } },
@@ -1037,7 +1203,7 @@ window.__ModuleLoader__.load({
           onChange: (ev) => setMoveTo(ev.target.value),
         },
           h('option', { value: '' }, 'Move to…'),
-          (folders || []).map((f) => h('option', { key: f.entryId, value: f.entryId }, '  '.repeat(f.depth || 0) + f.name))),
+          (flatFolders).map((f) => h('option', { key: f.entryId, value: f.entryId }, '  '.repeat(f.depth || 0) + f.name))),
         h('button', { className: 'md-btn', type: 'button', disabled: busy !== '' || moveTo === '' || selectionCount === 0, onClick: () => void doMove() }, 'Go'),
         h('button', { className: 'md-btn', type: 'button', disabled: busy !== '' || selectionCount === 0, onClick: () => void doOpenInOutlook() }, 'Open in Outlook'),
         h('button', { className: 'md-btn', type: 'button', disabled: busy !== '' || selectionCount !== 1, onClick: () => void openCompose('reply') }, 'Reply'),
@@ -1176,6 +1342,52 @@ window.__ModuleLoader__.load({
             : null)
       })()
 
+      // The agent lives where the mail is: same page, same mailbox, no tab
+      // switching. It runs as a real harness session, so it keeps the full
+      // maildesk_* tool surface and the same confirmation gates as the chat.
+      const askDrawer = askOpen
+        ? h('div', { className: 'md-ask' },
+            h('div', { className: 'md-ask-head' },
+              h('b', null, 'Mail assistant'),
+              h('span', { className: 'md-ask-sub' }, 'same agent, same mail tools'),
+              h('span', { className: 'md-spacer' }),
+              h('button', { className: 'md-btn', type: 'button', onClick: () => setAskOpen(false) }, 'Close')),
+            h('div', { className: 'md-ask-log' },
+              askLog.length === 0
+                ? h('div', { className: 'md-ask-empty' },
+                    'Ask about this mailbox — “summarize this thread”, “reply that Tuesday works”, “move this to Concur”. '
+                    + 'The assistant is the same agent as the chat, with the maildesk tools; anything sent still needs your confirmation.')
+                : askLog.map((m) => h('div', { key: m.key, className: 'md-ask-msg ' + m.role },
+                    m.role === 'tool'
+                      ? '⚙ ' + String(m.text)
+                      // The transcript is plain text; drop the two markers that
+                      // would otherwise show up literally in agent replies.
+                      : String(m.text).replace(/\*\*(.+?)\*\*/g, '$1').replace(/^#{1,6}\s+/gm, ''))),
+              askError !== '' ? h('div', { className: 'md-ask-err' }, askError) : null,
+              h('div', { ref: askEndRef })),
+            h('div', { className: 'md-ask-compose' },
+              h('textarea', {
+                className: 'md-ask-input',
+                placeholder: 'Ask the mail assistant…  (Enter to send, Shift+Enter for a new line)',
+                value: askText,
+                rows: 2,
+                onChange: (ev) => setAskText(ev.target.value),
+                onKeyDown: (ev) => {
+                  if (ev.key === 'Enter' && !ev.shiftKey) {
+                    ev.preventDefault()
+                    ev.stopPropagation()
+                    void askSend()
+                  }
+                },
+              }),
+              h('button', {
+                className: 'md-btn primary',
+                type: 'button',
+                disabled: askBusy || askText.trim() === '',
+                onClick: () => void askSend(),
+              }, askBusy ? 'Sending…' : 'Ask')))
+        : null
+
       return h('div', { className: 'md', onKeyDown, tabIndex: -1 },
         h('div', { className: 'md-top' },
           h('span', { className: 'md-title' }, 'Mail'),
@@ -1203,6 +1415,12 @@ window.__ModuleLoader__.load({
             h('option', { value: '50' }, '50'),
             h('option', { value: '100' }, '100'),
             h('option', { value: '200' }, '200')),
+          h('button', {
+            className: 'md-btn' + (askOpen ? ' primary' : ''),
+            type: 'button',
+            title: 'Ask the agent about this mailbox without leaving the panel',
+            onClick: () => setAskOpen((v) => !v),
+          }, askOpen ? 'Assistant on' : 'Ask'),
           h('button', { className: 'md-btn', type: 'button', disabled: busy !== '', onClick: () => void openCompose('new') }, 'New'),
           h('button', { className: 'md-btn', type: 'button', disabled: busy !== '', onClick: () => void refresh() }, busy === 'refresh' ? 'Refreshing…' : 'Refresh')),
         error !== '' && listState === 'error'
@@ -1224,14 +1442,22 @@ window.__ModuleLoader__.load({
             toolbar,
             h('div', { className: 'md-rows', ref: rowsRef, role: 'listbox', 'aria-label': 'Messages', 'aria-multiselectable': true }, rows),
             h('div', { className: 'md-pager' },
-              h('span', null, page.offset + 1 + '–' + (page.offset + page.returned) + ' of ' + page.total),
-              page.unreadInFolder > 0 ? h('span', null, '· ' + page.unreadInFolder + ' unread') : null,
-              page.unreadInFolder === -1 ? h('span', null, '· unread count unavailable') : null,
-              h('span', { className: 'md-spacer' }),
-              page.offset + page.returned < page.total
-                ? h('button', { className: 'md-btn', type: 'button', disabled: busy !== '', onClick: () => void loadMore() }, busy === 'more' ? 'Loading…' : 'Load more')
-                : h('span', { style: { opacity: .6 } }, 'end of folder'))),
+              // While the page is in flight the counters are still zeroed, and
+              // "1–0 of 0 · unread count unavailable" reads like an empty
+              // mailbox. Say what is actually happening.
+              listState === 'loading'
+                ? [h('span', { key: 'loading' }, 'Loading…'), h('span', { key: 'sp', className: 'md-spacer' })]
+                : [
+                    h('span', { key: 'range' }, page.offset + 1 + '–' + (page.offset + page.returned) + ' of ' + page.total),
+                    page.unreadInFolder > 0 ? h('span', { key: 'unread' }, '· ' + page.unreadInFolder + ' unread') : null,
+                    page.unreadInFolder === -1 ? h('span', { key: 'unc' }, '· unread count unavailable') : null,
+                    h('span', { key: 'sp', className: 'md-spacer' }),
+                    page.offset + page.returned < page.total
+                      ? h('button', { key: 'more', className: 'md-btn', type: 'button', disabled: busy !== '', onClick: () => void loadMore() }, busy === 'more' ? 'Loading…' : 'Load more')
+                      : h('span', { key: 'end', style: { opacity: .6 } }, 'end of folder'),
+                  ])),
           h('div', { className: 'md-read' }, reader)),
+        askDrawer,
         composeView,
         toast !== null ? h('div', { className: 'md-toast', style: toast.isError ? { color: 'var(--dsw-alias-label-danger,#e5484d)' } : undefined, role: 'status' }, toast.text) : null)
     }

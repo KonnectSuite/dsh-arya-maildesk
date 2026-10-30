@@ -24,8 +24,8 @@
  */
 
 import { spawn } from 'node:child_process'
-import { createHash, randomBytes } from 'node:crypto'
-import { statSync, appendFileSync, writeFileSync } from 'node:fs'
+import { createHash, randomBytes, randomUUID } from 'node:crypto'
+import { statSync, appendFileSync, writeFileSync, readFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { fileURLToPath } from 'node:url'
 import { join, dirname } from 'node:path'
@@ -500,11 +500,38 @@ function fixtureCall(action, args = {}) {
   }
 }
 
+/**
+ * The folder walk is the slowest call in the plugin: one COM read per folder,
+ * so a real Exchange mailbox with a few hundred folders takes tens of seconds.
+ * A tree changes when a person files a folder, not between two panel opens, so
+ * a short cache keeps reopen instant without hiding a change for long. Keyed by
+ * the arguments, because `counts` and `maxDepth` change the payload.
+ */
+const FOLDER_CACHE_MS = 5 * 60 * 1000
+const folderCache = new Map()
+// Anything that changes read state, a folder count or a move makes the cached
+// tree stale; a person who just marked something read must not wait five
+// minutes for the rail to agree.
+const FOLDER_MUTATIONS = new Set(['mark_read', 'move_mail', 'delete_mail'])
+
 /** One panel call: the fixture when explicitly enabled, COM otherwise. */
 async function panelCall(action, args) {
   if (!PANEL_ACTIONS.has(action)) return { status: 'error', error: 'action not allowed: ' + action }
   if (fixture !== null) return fixtureCall(action, args)
-  return olk(action, args)
+  if (action !== 'list_folders') {
+    const value = await olk(action, args)
+    if (value !== null && value.status === 'ok' && FOLDER_MUTATIONS.has(action)) folderCache.clear()
+    return value
+  }
+  const key = JSON.stringify(args || {})
+  const hit = folderCache.get(key)
+  if (hit !== undefined && Date.now() - hit.at < FOLDER_CACHE_MS) return hit.value
+  const value = await olk(action, args)
+  if (value !== null && value.status === 'ok') {
+    folderCache.set(key, { at: Date.now(), value })
+    if (folderCache.size > 64) folderCache.delete(folderCache.keys().next().value)
+  }
+  return value
 }
 
 /** NewMailEx watcher state shared by the badge route and check tool. */
@@ -795,6 +822,175 @@ export function apply(ctx) {
         }
       },
     }), 'dsh-arya-maildesk: panel call route')
+
+    // ---- in-panel assistant --------------------------------------------
+    // Ask runs a REAL agent turn in a session of its own: the harness stays the
+    // only thing that talks to a model, the maildesk_* tools are already in its
+    // registry, and anything that leaves the machine still passes the same human
+    // gates as the chat. The panel only needs "send this" and "what came back".
+    // The assistant's session id outlives a reload but not a fresh machine.
+    // The env override exists so tests never read the user's own state.
+    const ASK_STATE_FILE = process.env.MAILDESK_STATE_FILE || join(tmpdir(), 'dsh-arya-maildesk-ask.json')
+
+    const readAskSession = () => {
+      try {
+        const saved = JSON.parse(readFileSync(ASK_STATE_FILE, 'utf8'))
+        return saved !== null && typeof saved.sessionId === 'string' && saved.sessionId !== '' ? saved.sessionId : null
+      } catch {
+        return null
+      }
+    }
+
+    const saveAskSession = (sessionId) => {
+      try {
+        writeFileSync(ASK_STATE_FILE, JSON.stringify({ sessionId }), 'utf8')
+      } catch { /* the assistant still works for this process */ }
+    }
+
+    const askState = { sessionId: readAskSession(), asked: new Set() }
+
+    const createAskSession = async (controller) => {
+      const created = await controller.create({})
+      askState.sessionId = created.sessionId
+      saveAskSession(created.sessionId)
+      // A recognizable name in the sidebar beats five rows called "desktop";
+      // a host without renaming still works.
+      try {
+        await controller.rename({ sessionId: created.sessionId, title: 'Mail assistant' })
+      } catch { /* cosmetic */ }
+    }
+
+    // A session's log also holds the harness's own context injections (runtime
+    // context, skill catalogue, clock) as user-role messages. The panel must
+    // show the person's words and the answer, nothing else.
+    const looksLikeHarnessContext = (text) =>
+      /^Current runtime context\./.test(text) ||
+      text.includes('<system-reminder>') ||
+      /^Time sampled while preparing turn/.test(text)
+
+    const textOfMessage = (message) => {
+      if (message === null || message === undefined) return ''
+      if (typeof message === 'string') return message.trim()
+      const blocks = Array.isArray(message.content) ? message.content : []
+      return blocks
+        .filter((b) => b !== null && typeof b === 'object' && b.type === 'text' && typeof b.text === 'string')
+        .map((b) => b.text)
+        .join('\n')
+        .trim()
+    }
+
+    ctx.effect(() => webCtx.webServer.register({
+      kind: 'exact',
+      path: '/maildesk/api/ask',
+      handler: async (req, res) => {
+        res.setHeader('Content-Type', 'application/json; charset=utf-8')
+        if (req.method !== 'POST' && req.method !== 'GET') {
+          res.statusCode = 405
+          res.end(JSON.stringify({ ok: false, error: 'GET or POST only' }))
+          return
+        }
+        if (!sameOrigin(req)) {
+          res.statusCode = 403
+          res.end(JSON.stringify({ ok: false, error: 'cross-origin request refused' }))
+          return
+        }
+        const controller = ctx.get('sessionController')
+        if (controller === undefined) {
+          res.statusCode = 501
+          res.end(JSON.stringify({ ok: false, error: 'this host mounts no session controller, so the in-panel assistant is unavailable' }))
+          return
+        }
+        try {
+          if (req.method === 'GET') {
+            const sessionId = askState.sessionId
+            if (sessionId === null) {
+              res.end(JSON.stringify({ ok: true, sessionId: null, messages: [] }))
+              return
+            }
+            // History is addressed by a Session address, not a bare id: the
+            // events resolver reads address.sessionId.
+            const page = await controller.events(
+              { address: { kind: 'session', sessionId }, maxMessages: 80 },
+              new AbortController().signal,
+            )
+            const records = page !== null && page !== undefined && Array.isArray(page.records) ? page.records : []
+            const messages = []
+            for (const record of records) {
+              const event = record !== null && record !== undefined ? record.event : null
+              if (event === null || event === undefined) continue
+              // Showing the tools makes the answer auditable: a person can see
+              // it read the mailbox instead of trusting a sentence.
+              if (event.type === 'tool/call') {
+                const data = event.data !== null && typeof event.data === 'object' ? event.data : {}
+                const name = typeof data.name === 'string' ? data.name
+                  : (typeof data.tool === 'string' ? data.tool
+                    : (typeof data.toolName === 'string' ? data.toolName : ''))
+                if (name !== '') messages.push({ seq: event.seq, role: 'tool', text: name })
+                continue
+              }
+              if (event.type !== 'user/message' && event.type !== 'assistant/message') continue
+              // assistant/message carries data.message; user/message carries the
+              // content on the event data itself in some builds, so accept both.
+              const text = textOfMessage(event.data && (event.data.message !== undefined ? event.data.message : event.data))
+              if (text === '') continue
+              if (event.type === 'user/message') {
+                if (looksLikeHarnessContext(text)) continue
+                const source = event.data && event.data.source
+                if (source !== null && typeof source === 'object' && typeof source.rpcId === 'string' && !askState.asked.has(source.rpcId)) continue
+              }
+              messages.push({ seq: event.seq, role: event.type === 'user/message' ? 'user' : 'assistant', text })
+            }
+            res.end(JSON.stringify({ ok: true, sessionId, messages }))
+            return
+          }
+          const body = await readJsonBody(req, 64 * 1024)
+          if (body.error !== undefined) {
+            res.statusCode = 400
+            res.end(JSON.stringify({ ok: false, error: body.error }))
+            return
+          }
+          const payload = body.value !== null && typeof body.value === 'object' ? body.value : {}
+          const text = String(payload.text || '').trim()
+          if (text === '') {
+            res.statusCode = 400
+            res.end(JSON.stringify({ ok: false, error: 'text is required' }))
+            return
+          }
+          if (askState.sessionId === null) {
+            await createAskSession(controller)
+          }
+          // "this one" is ambiguous to a tool that wants an entryId: hand the
+          // agent the panel's own context along with the words.
+          const context = [
+            payload.folderPath ? 'folder ' + String(payload.folderPath) : '',
+            payload.selected ? 'selected mail "' + String(payload.selected) + '"' : '',
+          ].filter(Boolean).join(', ')
+          const composed = context === '' ? text : text + '\n\n(mail panel · ' + context + ')'
+          const requestId = randomUUID()
+          askState.asked.add(requestId)
+          // The controller owns the durable source; its second argument is a
+          // cancellation signal, not prompt metadata.
+          const send = () => controller.prompt(
+            { sessionId: askState.sessionId, requestId, content: [{ type: 'text', text: composed }], mode: 'queue' },
+            new AbortController().signal,
+          )
+          try {
+            await send()
+          } catch (error) {
+            // A session id that outlived its log (a restart, a cleared profile)
+            // is worth exactly one retry on a fresh session.
+            if (!/not.?found|unknown session|no such/i.test(String(error && error.message))) throw error
+            askState.sessionId = null
+            await createAskSession(controller)
+            await send()
+          }
+          res.end(JSON.stringify({ ok: true, sessionId: askState.sessionId }))
+        } catch (error) {
+          res.statusCode = 500
+          res.end(JSON.stringify({ ok: false, error: (error && error.message) || String(error) }))
+        }
+      },
+    }), 'dsh-arya-maildesk: in-panel assistant route')
 
     // ---- compose routes (M3) -------------------------------------------
     // A draft is HARNESS DATA keyed by (account, mode, thread), so opening a

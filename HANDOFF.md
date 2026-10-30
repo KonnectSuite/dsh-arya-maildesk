@@ -8,13 +8,15 @@ that actually has classic Outlook. Keep this current when a version ships.
 | | |
 |---|---|
 | Package | `@aryacode/dsh-arya-maildesk` |
-| Version | **1.1.0** — built and installed on the work laptop from a local tarball; **not on npm yet** |
+| Version | **1.1.0** — published, tagged and in the market catalogue |
 | Repository | `KonnectSuite/dsh-arya-maildesk` (public) |
-| Built from commit | `992da37` (package manifest bumped to 1.1.0 with `publishConfig.access: public` after it) |
-| Last published | **1.0.3** — `https://registry.npmjs.org/@aryacode/dsh-arya-maildesk/-/dsh-arya-maildesk-1.0.3.tgz` |
-| 1.0.3 sha256 | `1b1be6b2667410ce7bc3bf6440b50f9233dc18c87ff7b3562a466d01736b2f5d` (85,872 bytes) |
-| 1.0.3 npm shasum | `426103d47383a11976a81bc6b118bf97410c75da` |
-| GitHub release | `https://github.com/KonnectSuite/dsh-arya-maildesk/releases/tag/v1.0.3` |
+| Built from commit | `62c8c74` (the sample-toggle view reset; tag `v1.1.0`) |
+| Published tarball | `https://registry.npmjs.org/@aryacode/dsh-arya-maildesk/-/dsh-arya-maildesk-1.1.0.tgz` |
+| 1.1.0 sha256 | `89c6215e4b7284d210836271a44e1d879aafc67d78e1f145c54d4279bda76cdb` (927,611 bytes) |
+| 1.1.0 npm shasum | `dec79235f4cca28dd2d8a9b3f65eac0d57bb8437` |
+| Published at | `2026-10-30T19:29:11Z` — pnpm's 24-hour fresh-release hold expires `2026-10-31T19:29Z` (15:29 local, Saturday) |
+| GitHub release | `https://github.com/KonnectSuite/dsh-arya-maildesk/releases/tag/v1.1.0` |
+| Market catalogue | served at 1.1.0, releases `1.1.0, 1.0.3, 1.0.2, 1.0.1, 1.0.0` |
 | Host requirement | `dsh.engines.dsh`: `^0.2.1-rc.3 \|\| >=0.2.2-alpha.2` |
 | Licence | MIT (fork of `UnknowCao/dsh-outlook` @ `5a2ec7d`; see `NOTICE`) |
 
@@ -93,9 +95,9 @@ are mirrored to `localStorage`, so reopening Mail lands where the person left it
 That session also found and fixed the reason the panel looked broken: the first paint waited for a whole-mailbox
 folder walk (545 folders, 16 s) before it asked for any mail, so "opening Mail" meant ~24 s of skeleton rows. The
 panel now paints the message list first and grows the folder rail lazily — **first mail in 3 s, rail in 1.5 s, one
-expand 2.5 s** on that same mailbox. 1.1.0 is that build (threads, accounts, the floating assistant and models came
-after it); it is installed on this PC as a local tarball because the machine has no npm credentials, so nothing after
-1.0.3 exists on the registry yet.
+expand 2.5 s** on that same mailbox. 1.1.0 is that build plus threads, accounts, the floating assistant and the
+model picker. It was assembled on the work laptop and released from this PC: published to npm, tagged `v1.1.0`,
+attached to the GitHub release and served by the market catalogue.
 
 The interface milestones below were captured on synthetic mail; the panel and reading pane have also now been seen
 on the real mailbox, the rest have not:
@@ -130,7 +132,6 @@ Offline — **184 assertions** in all:
 - `node --check index.js` / `client.js` — the only build gate; there is no bundler and no TypeScript.
 - `node test/resident-live.mjs` — **live only** (needs COM): starts the resident bridge through the real host
   routes and prints cold vs warm timings. Not part of `npm test`; it is the measurement behind the 10× claim.
-  routes and prints cold vs warm timings. Not part of `npm test`; it is the measurement behind the 10× claim.
 
 The resident bridge is killed on plugin dispose (`ctx.effect`), so a reload never leaves a PowerShell holding COM.
 If it dies, the call that noticed reports the error and every later call uses the one-shot path.
@@ -140,10 +141,12 @@ sandbox, for one — `test/sample-mail.test.mjs` stops at the first live-provide
 is honest about the failure, but the text is the raw spawn error, which that assertion's regex does not accept. Run
 the suites from a normal shell before treating a red run as a regression.
 
-**Still not verified: nothing has been written or sent from a real mailbox.** Rungs 1–5 pass on the work laptop —
-COM activation, the folder walk, paging, body retrieval and the panel itself. Everything that *writes* (move,
-delete, mark read), the composer and send have only ever run on synthetic mail from `MAILDESK_FIXTURE=1`, and the
-send gate has never seen a real recipient. Closing that is the rest of the ladder.
+**Where the real-mailbox proof now stands.** The work laptop took the ladder through a real send on 2026-10-30 —
+that session's commits are `5ec421d` (*the owner's real send closes rung 9*) and `5085198` (*the tool-path send
+working after the CreateItem fix*) — so reads, the panel, the composer and a confirmed send have all touched a real
+Exchange mailbox. What remains proven only on synthetic mail is the rest of the write surface: `move_mail`,
+`delete_mail` and `mark_read` round-trips from the panel, and the in-panel assistant. This PC cannot close either
+gap: its Outlook is the new WebView2 client with no COM surface.
 
 ## Continue on the work laptop (classic Outlook)
 
@@ -160,8 +163,8 @@ You are picking this up cold. Read this section top to bottom before touching an
 ### 2. Install
 
 The market card installs a version into a pnpm profile, and pnpm holds **any version younger than 24 h**
-(`minimumReleaseAge`, default 1440 minutes). For 1.0.3 that hold ends `2026-10-31T04:10Z` (**00:10 local, EDT, on
-Oct 31**). 1.0.3 is installed on this PC, so the order below is the one that actually worked:
+(`minimumReleaseAge`, default 1440 minutes). For 1.1.0 that hold ends `2026-10-31T19:29Z` (**15:29 local, EDT, on
+Oct 31**). Until then the card refuses the version, so the order below is the one that actually worked:
 
 1. **Publish, then refresh the catalogue** — `npm publish --access public`, then the market scripts in the
    *Release procedure* below. The catalogue is CDN-cached for up to 5 minutes, so a just-pushed version can take a
@@ -172,7 +175,7 @@ Oct 31**). 1.0.3 is installed on this PC, so the order below is the one that act
 
     ```yaml
     minimumReleaseAgeExclude:
-      - '@aryacode/dsh-arya-maildesk@1.0.3'     # REPLACE any older @1.0.x line, do not append
+      - '@aryacode/dsh-arya-maildesk@1.1.0'     # REPLACE any older line, do not append
     ```
 
     pnpm honours only the **first** rule per package name, so a leftover `@1.0.0` line shadows the new one — and
@@ -386,18 +389,22 @@ Sent Items. The failure behaviour was clean throughout: no send, no duplicate, n
 
 Open:
 
-- **1.1.0 is built and installed here but not on npm** — this machine has no npm credential (`~/.npmrc`,
-  `%APPDATA%\npm`, `NPM_TOKEN` and the KonnectSuite tree are all empty; `gh` is authenticated, npm is not).
-  Publishing is now the only step left for other users to get this build. The release-readiness pass is done:
-  the manifest is public-scoped and versioned, the README and [TESTCASES.md](./TESTCASES.md) describe what ships,
-  `docs/` travels in the tarball so images render on npm, and the packed tarball was installed into a clean
-  directory and activated there (24 tools, 11 routes, `lib/` intact).
+- **Nothing blocking 1.1.0** — the release-readiness pass is done and the version is out: `npm publish` → 1.1.0,
+  tag `v1.1.0`, GitHub release, market catalogue served at 1.1.0. The manifest is public-scoped and versioned, the
+  README and [TESTCASES.md](./TESTCASES.md) describe what ships, `docs/` travels in the tarball so images render on
+  npm, and the packed tarball was installed into a clean directory and activated there (24 tools, 11 routes,
+  `lib/` intact).
+- **The 24-hour hold** means the market card will not install 1.1.0 until `2026-10-31T19:29Z`; exempt the exact
+  version in the profile's `minimumReleaseAgeExclude` (replace the line, never append) to take it earlier.
+- **A cosmetic defect on a machine with no Outlook**: the first folder load surfaces the raw
+  `Folders could not be loaded: resident bridge exited (code 1)` in the status line, where the one-shot fallback
+  would have produced the bridge's own sentence. The banner already explains the machine; consider making the
+  resident bridge's first-call failure fall through to the one-shot path before reporting.
 
 ## Next, in priority order
 
-1. **Publish 1.1.0** — needs an npm credential (none on this machine) and the `@aryacode` scope owned by the
-   publishing account; `publishConfig.access` is already `public`. Then the catalogue entry and the GitHub release,
-   with the tag pointing at the published commit rather than at today's working tree.
+1. **Close the rest of the write ladder on the real mailbox** — `move_mail`, `delete_mail` and `mark_read`
+  round-trips from the panel, then the in-panel assistant. Everything else has touched real Exchange mail.
 2. **Stream the panel agent** so answers type out. Polling is 700 ms while a turn runs and 5 s idle; the drawer already
    knows `running`, has Stop and New, timestamps, markdown and grouped tool steps. True streaming needs an SSE bridge
    over `sessionQuery.observeSession` — the one piece deliberately left out of the floating-card pass.

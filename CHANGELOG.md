@@ -2,7 +2,11 @@
 
 This project's version narrative puts **why** before **what**. Every entry starts with the motivation.
 
-## 1.0.4 — The panel opens in seconds, not tens of seconds
+## 1.1.0 — The panel gets fast, and grows an assistant
+
+**Release scope**: everything since 1.0.3 — the panel speed work described first, then conversation threads,
+Focused/Other, per-account visibility, the new-arrival count on the Mail row, and the floating mail assistant with
+its model picker. Named 1.1.0 rather than 1.0.4 because the assistant is a feature release, not a polish pass.
 
 **Why**: on a real Exchange mailbox the Mail panel sat on skeleton rows for ~24 s before the first message appeared. The first paint waited for `list_folders` with `maxDepth: 6`, and a folder walk costs one COM read per folder — 545 folders × 30–90 ms ≈ 16 s — on top of ~1.5 s of PowerShell process start and another 2.5 s before the first page of mail. Nothing was broken; everything was slow, which reads the same to a person who just clicked Mail.
 

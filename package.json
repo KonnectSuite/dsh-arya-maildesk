@@ -1,6 +1,9 @@
 {
   "name": "@aryacode/dsh-arya-maildesk",
-  "version": "1.0.4",
+  "version": "1.1.0",
+  "publishConfig": {
+    "access": "public"
+  },
   "repository": {
     "type": "git",
     "url": "git+https://github.com/KonnectSuite/dsh-arya-maildesk.git"
@@ -40,7 +43,8 @@
     "TESTCASES.md",
     "NOTICE",
     "UPSTREAM.md",
-    "LICENSE"
+    "LICENSE",
+    "docs"
   ],
   "scripts": {
     "test": "node test/bundle.test.mjs && node test/panel-api.test.mjs && node test/ask-route.test.mjs && node test/accounts.test.mjs && node test/models.test.mjs && node test/drafts-persist.test.mjs && node test/sample-mail.test.mjs && powershell -NoProfile -ExecutionPolicy Bypass -File test/run-all.ps1",

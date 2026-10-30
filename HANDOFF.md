@@ -8,9 +8,9 @@ that actually has classic Outlook. Keep this current when a version ships.
 | | |
 |---|---|
 | Package | `@aryacode/dsh-arya-maildesk` |
-| Version | **1.0.4** — built and installed on the work laptop from a local tarball; **not on npm yet** |
+| Version | **1.1.0** — built and installed on the work laptop from a local tarball; **not on npm yet** |
 | Repository | `KonnectSuite/dsh-arya-maildesk` (public) |
-| Built from commit | working tree (1.0.4 is uncommitted as this is written) |
+| Built from commit | `992da37` (package manifest bumped to 1.1.0 with `publishConfig.access: public` after it) |
 | Last published | **1.0.3** — `https://registry.npmjs.org/@aryacode/dsh-arya-maildesk/-/dsh-arya-maildesk-1.0.3.tgz` |
 | 1.0.3 sha256 | `1b1be6b2667410ce7bc3bf6440b50f9233dc18c87ff7b3562a466d01736b2f5d` (85,872 bytes) |
 | 1.0.3 npm shasum | `426103d47383a11976a81bc6b118bf97410c75da` |
@@ -93,8 +93,9 @@ are mirrored to `localStorage`, so reopening Mail lands where the person left it
 That session also found and fixed the reason the panel looked broken: the first paint waited for a whole-mailbox
 folder walk (545 folders, 16 s) before it asked for any mail, so "opening Mail" meant ~24 s of skeleton rows. The
 panel now paints the message list first and grows the folder rail lazily — **first mail in 3 s, rail in 1.5 s, one
-expand 2.5 s** on that same mailbox. 1.0.4 is that build; it is installed on this PC as a local tarball because the
-machine has no npm credentials, so nothing after 1.0.3 exists on the registry yet.
+expand 2.5 s** on that same mailbox. 1.1.0 is that build (threads, accounts, the floating assistant and models came
+after it); it is installed on this PC as a local tarball because the machine has no npm credentials, so nothing after
+1.0.3 exists on the registry yet.
 
 The interface milestones below were captured on synthetic mail; the panel and reading pane have also now been seen
 on the real mailbox, the rest have not:
@@ -370,14 +371,18 @@ this project has ever sent.
 
 Open:
 
-- **1.0.4 is built and installed here but not on npm** — this machine has no npm credential (`~/.npmrc`,
+- **1.1.0 is built and installed here but not on npm** — this machine has no npm credential (`~/.npmrc`,
   `%APPDATA%\npm`, `NPM_TOKEN` and the KonnectSuite tree are all empty; `gh` is authenticated, npm is not).
-  Publishing is now the only step left for other users to get this build.
+  Publishing is now the only step left for other users to get this build. The release-readiness pass is done:
+  the manifest is public-scoped and versioned, the README and [TESTCASES.md](./TESTCASES.md) describe what ships,
+  `docs/` travels in the tarball so images render on npm, and the packed tarball was installed into a clean
+  directory and activated there (24 tools, 11 routes, `lib/` intact).
 
 ## Next, in priority order
 
-1. **Publish 1.0.4** (npm credentials are needed on this machine — none are present), then the catalogue entry and
-   the GitHub release. The build is otherwise ready: tests green, the tarball installs, these notes are current.
+1. **Publish 1.1.0** — needs an npm credential (none on this machine) and the `@aryacode` scope owned by the
+   publishing account; `publishConfig.access` is already `public`. Then the catalogue entry and the GitHub release,
+   with the tag pointing at the published commit rather than at today's working tree.
 2. **Stream the panel agent** so answers type out. Polling is 700 ms while a turn runs and 5 s idle; the drawer already
    knows `running`, has Stop and New, timestamps, markdown and grouped tool steps. True streaming needs an SSE bridge
    over `sessionQuery.observeSession` — the one piece deliberately left out of the floating-card pass.

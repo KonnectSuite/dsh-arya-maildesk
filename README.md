@@ -1,4 +1,4 @@
-﻿# dsh-arya-maildesk
+# dsh-arya-maildesk
 
 > **Let an AI drive the Outlook you are already logged into, on a work laptop where IT will not give you a Graph API permission.**
 > No credentials, no admin rights, and nothing leaves the machine without asking you first.
@@ -45,11 +45,9 @@
 | `maildesk_search_rooms` | Room search plus availability for a given window | read-only |
 | `maildesk_save_attachment` | Save an attachment to disk (no path traversal, never overwrites) | local write |
 
-**Plus a sidebar badge.** New mail shows a red count on the Outlook button; clicking it lists the latest arrivals and **clicking one opens it in Outlook** (marked read, count decrements). Hover previews the list. A `[Open](…)` markdown link in the chat works the same way: the plugin intercepts the left click in-page, so there is no stray tab, and a toast confirms at the bottom.
+**Plus a count on the Mail row.** New mail puts a red count on the envelope in the sidebar — arrivals **since you last opened the panel**, not the folder's unread total, so 141 unread sitting in the Inbox stays quiet until something new lands. Opening Mail marks it seen and clears the count. A `[Open](…)` markdown link in the chat still opens the mail in Outlook: the plugin intercepts the left click in-page, so there is no stray tab, and a toast confirms at the bottom.
 
-| Expanded (outside badge) | Collapsed (dot inside the circle) |
-|---|---|
-| ![expanded sidebar badge](assets/badge-wide.png) | ![collapsed rail badge](assets/badge-rail.png) |
+The count has two sources: one `search_mail` from your last-seen timestamp when the app starts (mail that arrived while AryaCode was closed), and the `NewMailEx` watcher while it runs.
 
 ## The mail panel
 
@@ -58,7 +56,7 @@
 
 A **Mail** icon in the sidebar opens a three-pane mailbox: folder rail, message list with a real selection (click, shift-range, ctrl-toggle), reading pane, and the organize actions — mark read or unread, move to a folder, delete to Deleted Items. A page loads 100 rows and pages on demand; the unread-only filter and the sort run in Outlook, not in the browser.
 
-The data path is one allowlisted host route, `POST /maildesk/api/call`, guarded by the same origin check as the badge. It accepts `account`, `list_folders`, `list_mail`, `read_mail`, `mark_read`, `move_mail`, `delete_mail` and `open_mail`. **Sending is not on that list**, and cannot be reached through it.
+The data path is one allowlisted host route, `POST /maildesk/api/call`, guarded by the same origin check as the badge. It accepts `account`, `list_folders`, `list_mail`, `read_mail`, `search_mail`, `thread`, `mark_read`, `move_mail`, `delete_mail` and `open_mail`. **Sending is not on that list**, and cannot be reached through it.
 
 No Outlook on this machine? A PC whose Outlook is the new WebView2 client has no COM surface at all, and the panel says so instead of showing an empty mailbox. From there, **Preview with sample mail** switches the panel (and the tools) to a synthetic mailbox so the interface can be seen and used; the header then reads `SAMPLE MAIL` with a **Back to live mail** button. Data is never mixed: the pill always says which one you are looking at.
 
@@ -101,6 +99,38 @@ The card is a view of the same host-owned draft the panel edits, not a copy. The
 `[Open beside chat]` puts the same draft in a tab of the right Sidebar, so the thread you are answering stays on screen while you send. It is a real Sidebar tab — a `sidebarRightTabs` type plus its keyed `sidebar.right.pane.tab` body — not an overlay, so it collapses, splits and closes the way the harness's own tabs do.
 
 The tab carries `[Send…] [Open in panel] [Discard]` and a `Close this tab` link, and it reads the draft from the same `op: "get"` route as the card. Sending from it cannot send stale content: if the draft changes between the preview and the confirmation, the retry no longer matches the hash and the tab asks you to send again rather than sending what you did not read.
+
+### Conversations you can open
+
+When Outlook groups a mail with others, the reader offers **`Conversation · N`**. Opening it lists every message in the thread in time order — sender, time, unread dot — with the one you were reading already expanded and the rest collapsed; clicking a row loads its body.
+
+The bridge gets this from Outlook itself (`MailItem.GetConversation()`), not from subject matching, so a thread that changed subject mid-way still groups correctly. Bodies load one at a time, so a forty-message thread costs one call, not forty.
+
+### Focused / Other
+
+Two tabs above the message list split what is loaded: **Focused** for people, **Other** for senders that look automated (`noreply@`, notification digests, mailers).
+
+**This is AryaCode's rule, not Outlook's.** Outlook keeps its Focused classification server-side and exposes nothing usable to a COM client — the item's property bag has no focus property, and a `Restrict` on the conversation id returns nothing. The tabs say as much in their tooltip. If you want Outlook's own split, use Outlook.
+
+### Showing only the accounts you want
+
+**Accounts** in the panel header lists every store in the Outlook profile. Unchecking one drops its folders from the rail, from `list_folders` as the agent sees it, and from the move picker — while Outlook keeps the account untouched and syncing. The choice is persisted and the last visible account cannot be hidden.
+
+### The assistant, floating over the mail
+
+The **Ask** pill at the bottom-right of the panel raises a card instead of taking a strip of the layout: the mailbox keeps its full height, and the card floats above it.
+
+- **Drag** it by its header; it snaps to the nearest corner. **Resize** from the bottom-left grip; double-click the header to reset. It remembers where you put it.
+- `Ctrl+J` toggles it, `Esc` collapses it, `Enter` sends, `Shift+Enter` breaks the line.
+- It is the same agent as the chat — same session service, same `maildesk_*` tools, same confirmation gates — so anything that sends still asks you first.
+- Questions and answers carry who and when; answers render light markdown (bold, bullets, inline code, links); consecutive tool calls collapse into one `N steps` line with a spinner while they run.
+- A context chip shows what the next question rides on (`About: <subject> · N messages`); the × drops it for one question.
+
+Polling is 700 ms while a turn runs and 5 s when idle. **One limitation**: the harness's `ask_user_question` popup belongs to the chat client, so the panel asks its questions **in plain text** instead — the turn is instructed never to call that tool. A question asked there arrives as a normal message you answer with your next message.
+
+### Choosing the model
+
+The chip in the card header names the model answering (`V4.1-Flash · High` on this deployment) and opens the host's catalog: **DeepSeek-V4.1-Flash** or **DeepSeek-V4-Pro**, each with Off / Low / High / Max. The choice goes through `sessionController.selectModel`, the same path the chat uses — which also means it becomes the deployment default, exactly as it does when you change the model in chat.
 
 ## Quick start
 
@@ -150,21 +180,22 @@ Known boundaries: the `/olk-notify/*` routes are reachable only from this host a
 
 ```
 index.js          host half: 24 tool registrations, the allowlisted panel route, the
-                  draft store and the two compose routes, the fixture provider,
-                  two-call confirmation, content hash, watcher management
-client.js         browser half: the Mail panel (folders, list, reading pane, composer),
-                  the draft card at tool.call.toolview, the right-Sidebar draft tab,
-                  and the sidebar badge with click-to-open
-lib/olk.ps1       the COM bridge: every Outlook operation, the token gate, and the
-                  localization quirks (see the file header)
+                  assistant routes (ask, models), the accounts filter, the draft
+                  store and compose routes, the fixture provider, two-call
+                  confirmation, content hash, watcher management
+client.js         browser half: the Mail panel (folders, list, reading pane, composer,
+                  conversations, Focused/Other, accounts), the floating assistant
+                  card, the draft card at tool.call.toolview, the right-Sidebar
+                  draft tab, and the new-arrival count on the Mail row
+lib/olk.ps1       the COM bridge: every Outlook operation, the token gate, the
+                  resident loop, and the localization quirks (see the file header)
 lib/watch.ps1     NewMailEx resident listener: pushes arrivals, self-heals after 30s
 cordis.patch.yml  host row declaration
-test/             offline suites: folder resolution and mail actions against a fake
-                  COM model, plus the panel routes driven through fake req/res
+test/             offline suites: the panel and assistant routes driven through fake
+                  req/res, a fake COM model, fixture mail, and the PowerShell bridge
 NOTICE            upstream attribution (MIT) and the pinned base commit
 UPSTREAM.md       how this build relates to upstream, and how to diff it
-TESTCASES.md      49 cases (pipeline / rendering / coexistence / routes /
-                  click-to-open / link interception / known boundaries)
+TESTCASES.md      what is covered where, and the checks that need a real mailbox
 CHANGELOG.md      version narrative (why before what)
 ```
 
@@ -172,20 +203,36 @@ Diagnostic log: `%TEMP%\dsh-arya-maildesk-watch-debug.log` (rotated at 1 MB).
 
 ## Verification and tests
 
-**What runs offline, on a machine with no Outlook:**
+**178 assertions, seven suites, all run offline** (`npm test`):
 
-- `npm test` — 59 assertions in two suites. `test/folder-resolution.test.ps1` (14) checks that the resolver helper is not nested inside another function, and resolves the default folder, the well-known English names, a 78-character deep path and a 71-character entryId containing `/`. `test/mail-actions.test.ps1` (45) runs the **real** PowerShell case bodies against a fake COM object model — paging with a skipped non-mail item, sorting, preview truncation, unread-only, move returning new entryIds and isolating per-item failures, the `expected` count gate refusing **and deleting nothing**, mark read in both directions, and the folder-tree BFS.
-- `node test/panel-api.test.mjs` — 29 assertions driving the real host routes with fake `req`/`res`: the allowlist, paging and every row field, the hostile-HTML fixture, mark read, move, delete, the confirmation hash (missing → `needs-confirmation`, wrong → refused, matching → sent once), draft reuse on the same thread, and 403/405/400 on the transport edges.
+| Suite | Assertions | What it pins down |
+|---|---|---|
+| `test/bundle.test.mjs` | 15 | the browser bundle is one hand-written module: no build step, no imports, one `__ModuleLoader__` entry, and the host/panel route names match the client's |
+| `test/panel-api.test.mjs` | 29 | the panel routes through fake `req`/`res`: the action allowlist, paging and every row field, the hostile-HTML fixture, mark read, move, delete, the confirmation hash (missing → `needs-confirmation`, wrong → refused, matching → sent once), draft reuse, and 403/405/400 on the transport edges |
+| `test/ask-route.test.mjs` | 29 | the in-panel assistant: one session reused across questions, the panel context in the prompt, the ground rules that forbid `ask_user_question`, the turn markers behind `running`, message timestamps, `cancel`, `new`, and transcript filtering of harness injections |
+| `test/accounts.test.mjs` | 8 | hiding an account: the store list, the refusal to hide the last one, persistence, and that the mailbox itself is untouched |
+| `test/models.test.mjs` | 10 | the model route: catalog passthrough, selection, lazy session creation, and 400/405 on bad input |
+| `test/drafts-persist.test.mjs` | 11 | drafts survive a host restart, reuse on the same thread, and the discard path |
+| `test/sample-mail.test.mjs` | 17 | the fixture mailbox: labelled data, the pill, and that a COM failure is an error rather than invented mail |
+| `test/run-all.ps1` | 59 | the **real** PowerShell case bodies against a fake COM model: folder resolution, paging with a skipped non-mail item, sorting, preview truncation, unread-only, move returning new entryIds and isolating per-item failures, the `expected` count gate refusing **and deleting nothing**, mark read both ways, and the folder-tree BFS |
 
-**What is not verified**: no release of this code has read a real mailbox. Everything above runs against synthetic mail. The COM path is proven only in the sense that its PowerShell parses and its JSON contract is exercised; the first real mailbox — expected to be a work laptop with classic Outlook — is what closes that gap. The 49 cases in [TESTCASES.md](./TESTCASES.md) were inherited from upstream, where its author ran them against Exchange; the actions added here (2.12.0 and later) and the whole panel/composer path have no case of their own yet. Run `maildesk_list_folders` first on a real machine.
-- COM quirks (two-stage Jet/DASL filtering, the `Restrict` date format, `IncludeRecurrences` reporting MaxInt, PowerShell 5.1 stdin encoding) are all encoded in `lib/olk.ps1` and were verified against a real Exchange mailbox by the upstream author.
+**What has been verified on a real mailbox** (an Exchange profile with three stores, ~545 folders):
+
+- account / folders / list / read / mark read / move / delete / open, counts restored after every test;
+- compose, reply-all with Exchange senders (`EX:/O=…` resolved to SMTP), and **one real send by the owner** through the panel's confirmation;
+- conversations (a four-message thread across three people), Focused/Other (82 / 18 on the first page), account hiding, the new-arrival count, and the floating assistant answering a live question;
+- the model picker switching Flash ↔ V4-Pro and back.
+
+**What is still manual**: dragging and resizing the assistant card, and pressing Stop mid-answer (no automated coverage; the click paths were exercised by hand). COM quirks — two-stage Jet/DASL filtering, the `Restrict` date format, `IncludeRecurrences` reporting MaxInt, PowerShell 5.1 stdin encoding — are encoded in `lib/olk.ps1` and were verified against Exchange by the upstream author.
 
 ## Where it appears in the app
 
 | What you see | What it is |
 |---|---|
 | **Mail** row in the sidebar | opens the mail panel: folder rail, message list, reading pane, composer |
-| **Mail** chip at the bottom of the sidebar | new-mail count; click it for the latest arrivals, click one to open it in Outlook |
+| A red count on that row's envelope | mail that arrived **since you last opened** the panel; opening it clears the count |
+| **Accounts** in the panel header | hide a store from AryaCode without touching Outlook |
+| **Ask** pill, bottom-right of the panel | the floating assistant (`Ctrl+J`), with its model chip in the header |
 | `maildesk_*` tools | what the agent calls; they answer from the same mailbox the panel shows |
 | A card in the conversation | a draft the agent composed — edit it, send it, or discard it |
 | A **Mail draft** tab at the right | the same draft, beside the conversation, while you keep chatting |
@@ -196,12 +243,18 @@ Open **Mail**, click a folder, click a message. That exercises the whole read pa
 
 ## Settings
 
-There is no settings screen; two environment variables change behaviour, read when the host half starts:
+There is no settings screen. These environment variables change behaviour, read when the host half starts:
 
 | Variable | Default | Effect |
 |---|---|---|
 | `MAILDESK_FIXTURE` | unset | `1` serves a synthetic mailbox (~100 mails, hostile HTML, all folders) instead of COM — for reviewing the interface on a machine without Outlook. The panel then shows a `FIXTURE DATA` pill. Never reads or writes real mail. |
-| `OLK_WATCH` | unset | `0` turns the new-mail watcher off (no badge count, no `check_new` queue); useful when you do not want a resident PowerShell listener. |
+| `OLK_WATCH` | unset | `0` turns the new-mail watcher off (no count on the Mail row, no `check_new` queue); useful when you do not want a resident PowerShell listener. |
+| `MAILDESK_NO_RESIDENT` | unset | `1` stops the resident bridge process and pays a PowerShell start per call. The fallback for a machine where a long-lived child is not allowed (some sandboxes). |
+| `MAILDESK_STATE_FILE` | `%TEMP%\dsh-arya-maildesk-ask.json` | where the assistant's session id is remembered, so the thread survives a restart. |
+| `MAILDESK_DRAFTS_FILE` | `%TEMP%\dsh-arya-maildesk-drafts.json` | where the harness-owned drafts are kept. |
+| `MAILDESK_ACCOUNTS_FILE` | `%TEMP%\dsh-arya-maildesk-accounts.json` | where the hidden-account choice is kept. |
+
+The model is not an environment variable: it is the harness's own selection, changed from the assistant's header chip (or from chat), and it follows you between the two.
 
 ## Remove
 
@@ -209,16 +262,23 @@ There is no settings screen; two environment variables change behaviour, read wh
 dsh plugin --profile <profile> remove @aryacode/dsh-arya-maildesk
 ```
 
-Nothing of yours is left behind: drafts live in the host process's memory, the fixture is generated on demand. The only file it writes is a diagnostic log, `%TEMP%\dsh-arya-maildesk-watch-debug.log`, which you can delete. If you staged the tarball from the market, `<profile>\.dsh-market\releases\` keeps a copy — harmless, and shared with anything else installed from the market.
+Nothing of yours is deleted from Outlook, and the plugin leaves three small files in `%TEMP%` that you can remove yourself: `dsh-arya-maildesk-ask.json` (the assistant's session id), `dsh-arya-maildesk-drafts.json` (harness-owned drafts), `dsh-arya-maildesk-accounts.json` (which accounts you hid), plus `dsh-arya-maildesk-watch-debug.log`. If you staged the tarball from the market, `<profile>\.dsh-market\releases\` keeps a copy — harmless, and shared with anything else installed from the market.
 
 ## Troubleshooting
 
 **The panel says "No classic Outlook answered on this machine."**
 You are on the new Outlook for Windows (the WebView2 client), or Office is installed without Outlook. The new client has no COM surface — this is a property of the client, not a setting. Use a machine with classic Outlook, or click **Preview with sample mail** in the panel (or set `MAILDESK_FIXTURE=1`) to work on the interface with synthetic mail.
 
+**The assistant sits on "Working…" with one step called `ask_user_question`.**
+That tool's popup belongs to the chat client; raised from the panel it waits on a surface that is not there. The panel's prompt forbids it, so this should not happen — if it does, press **Stop** and ask again. The turn is not lost.
+
+**Changing the model changed it in chat too.**
+Expected: the panel selects through the harness, and the harness saves the choice as the deployment default. Set it back from either place.
+
 **A send is refused with `SEND BLOCKED: no human confirmation token`.**
 That is the third gate doing its job: something tried to send without going through the panel's or the card's confirmation. Send again from the panel or the card, where confirming is a click.
 
+**Nothing in the sidebar, or the tools are missing.**
 **Nothing in the sidebar, or the tools are missing.**
 The host half did not activate. Restart the profile and check the app log for `did not activate`, `import failed` or `duplicate factory`. If `dsh-outlook` is also installed, that is fine — the tool prefixes differ (`outlook_*` vs `maildesk_*`).
 

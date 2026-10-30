@@ -1,7 +1,12 @@
 # dsh-arya-maildesk bundle patch.
 # Inserts one host-plane row: Outlook COM tools. The row publishes no service,
 # so no realm is needed; it registers global tools every agent sees.
+#
+# `name` must be the package's own name exactly as package.json declares it,
+# scope included: the loader resolves this string with import(), so an unscoped
+# name here fails at activation with ERR_MODULE_NOT_FOUND even though the
+# tarball installed cleanly. test/bundle.test.mjs enforces this.
 
 - insert:
     - id: outlook
-      name: 'dsh-arya-maildesk'
+      name: '@aryacode/dsh-arya-maildesk'

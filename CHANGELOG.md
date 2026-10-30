@@ -2,6 +2,17 @@
 
 This project's version narrative puts **why** before **what**. Every entry starts with the motivation.
 
+## 1.0.1 — The bundle named a package that did not exist
+
+**Why**: 1.0.0 installed cleanly on a work laptop and then refused to activate, with `outlook (dsh-arya-maildesk): failed to import: Error [ERR_MODULE_NOT_FOUND]: Cannot find package 'dsh-arya-maildesk'`. The bundle patch still named the package **unscoped** — a leftover of the rename to `@aryacode/dsh-arya-maildesk`. The loader resolves that string with `import()`, so the tarball could be present, correct, digest-verified and still not mount. It never showed up in development because the dev profile links this repository under the *unscoped* name, which made the stale string resolve by luck. Nothing about Outlook, COM or the market was wrong; the package simply called itself by an old name.
+
+**What changed**:
+- `cordis.patch.yml` names `@aryacode/dsh-arya-maildesk`, with a comment saying why the scope is not optional there.
+- `test/bundle.test.mjs` (13 checks, now part of `npm test`) asserts the patch's row names match `package.json`, that the name stays scoped, that every entry point exists **and** is listed in `files`, and that `dsh.engines.dsh` is declared. Replaying 1.0.0's patch through it fails, which is the point.
+- `npm test` runs the bundle guard before the PowerShell suites.
+
+---
+
 ## 1.0.0 — Our own product, counted from one
 
 **Why**: this began as someone else's plugin with a good idea and a hard ceiling — 18 tools, a badge, and no way to see more than one mail at a time. Almost everything you can touch now (the panel, the composer, the draft card, the Sidebar tab) was written in this repository, and the version number was still quoting a release line this project never published. A fork's number belongs to the fork. This is the point where the thing has its own name, its own tool prefix (`maildesk_*`), its own tests and its own face, so it starts counting at 1.0.0.

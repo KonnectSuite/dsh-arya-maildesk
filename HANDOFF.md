@@ -281,10 +281,10 @@ silently.
 
 ## Known gaps
 
-1. **The final send dispatch has never run.** Reads, mark-read, move, delete, the reply composer and the send
-   *gates* pass (rungs 1–8 plus the confirmation half of 9): no hash returns `needs-confirmation` with the exact
-   preview, and a wrong hash is refused with the draft intact. What has never happened is Outlook actually
-   transmitting a message, and no human has yet approved one leaving the machine.
+1. **Send is verified once, by the owner.** On 2026-10-30 11:46 a reply sent from the panel reached Sent Items and
+   the Inbox, which exercises composer → hash → confirmation → bridge token → Outlook → Exchange. It is one
+   message, not a soak test: attachments, non-Exchange recipients and the programmatic-send prompt under other
+   Outlook security settings have not been tried.
 2. **User-visible strings are English only.** No locale layer, no `locale/*.json`. Deliberate deviation from
    the market's localisation gate, recorded rather than hidden; first item for 1.1.0.
 3. **`TESTCASES.md`'s 49 cases were inherited** and run by upstream's author. Post-fork actions have no case
@@ -347,16 +347,20 @@ per call), the rail is lazy and remembers its shape, search / mark-read / move /
 live mail, unsent drafts survive a restart, replies are addressed through Exchange, and the agent runs **inside
 the Mail page** with one-click asks that carry the selected `entryId`.
 
-Evidence: **150 offline assertions**, plus the live ladder through rung 8, plus the send *gates* run for real
+Evidence: **150 offline assertions**, plus the live ladder through rung 9, plus the send *gates* run for real
 (no hash → `needs-confirmation` with preview and content hash; wrong hash → refused, draft intact; no bridge token
 → `SEND BLOCKED`). `node test/resident-live.mjs` prints the bridge timings.
 
-Open, and both need a human:
+**Rung 9 passed on 2026-10-30 11:46**, sent by the owner from the panel: a reply to *RE: Asset Center* appeared in
+Sent Items and arrived back in the Inbox at the same minute. That exercise covers the whole outbound chain —
+composer, content hash, confirmation, bridge token, Outlook send and Exchange delivery — and it is the first mail
+this project has ever sent.
 
-- **the final send dispatch has never run** — deliberately: the gate exists so an agent cannot send without its
-  owner's approval, and the owner has not given one yet. Everything up to transmission is proven.
+Open:
+
 - **1.0.4 is built and installed here but not on npm** — this machine has no npm credential (`~/.npmrc`,
   `%APPDATA%\npm`, `NPM_TOKEN` and the KonnectSuite tree are all empty; `gh` is authenticated, npm is not).
+  Publishing is now the only step left for other users to get this build.
 
 ## Next, in priority order
 

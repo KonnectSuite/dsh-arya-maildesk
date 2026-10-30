@@ -74,7 +74,8 @@ so the conversation survives a reload, the transcript names the tools it calls, 
 selected mail's `entryId`, so "reply to this one" resolves without a search.
 
 `Move to…` is a picker of its own now, because the lazy rail only knew the folders a person had expanded: it
-filters by path and can load the whole tree on demand (one slow walk, cached).
+filters by path and can load the whole tree on demand (one slow walk, cached). The rail's shape and the open folder
+are mirrored to `localStorage`, so reopening Mail lands where the person left it.
 
 That session also found and fixed the reason the panel looked broken: the first paint waited for a whole-mailbox
 folder walk (545 folders, 16 s) before it asked for any mail, so "opening Mail" meant ~24 s of skeleton rows. The

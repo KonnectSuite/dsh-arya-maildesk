@@ -9,9 +9,17 @@
  *   node test/panel-api.test.mjs
  */
 import assert from 'node:assert/strict'
+import { rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 
 process.env.MAILDESK_FIXTURE = '1'
 process.env.OLK_WATCH = '0'
+// Drafts now persist to disk, so a run must not inherit the previous run's
+// drafts (or the app's): start every suite from an empty store.
+process.env.MAILDESK_DRAFTS_FILE = join(tmpdir(), 'maildesk-panel-drafts-' + process.pid + '.json')
+process.env.MAILDESK_STATE_FILE = join(tmpdir(), 'maildesk-panel-ask-' + process.pid + '.json')
+rmSync(process.env.MAILDESK_DRAFTS_FILE, { force: true })
 
 const plugin = await import('../index.js')
 

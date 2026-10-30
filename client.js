@@ -33,6 +33,8 @@ window.__ModuleLoader__.load({
     // First paint resolves the default Inbox by NAME, before the folder tree is
     // known; entryIds replace it as soon as a person picks a folder.
     const INBOX = 'Inbox'
+    // Where the panel remembers its shape between opens.
+    const UI_KEY = 'maildesk.ui.v1'
     const POLL_MS = 20000
 
     /** Lifecycle beacon → host debug file (diagnostics; silent on failure). */
@@ -574,10 +576,20 @@ window.__ModuleLoader__.load({
     function Panel() {
       const [folders, setFolders] = React.useState(null)
       // Lazy folder tree: children are fetched one folder at a time, so the
-      // rail never waits for a whole-mailbox walk (545 folders = 16 s).
-      const [kids, setKids] = React.useState({})
-      const [openFolders, setOpenFolders] = React.useState({})
-      const [folderId, setFolderId] = React.useState(null)
+      // rail never waits for a whole-mailbox walk (545 folders = 16 s). The
+      // tree, the expanded set and the folder you were reading are mirrored to
+      // localStorage, so reopening Mail lands where you left it without a
+      // single bridge call.
+      const savedUi = (() => {
+        try {
+          const raw = localStorage.getItem(UI_KEY)
+          const parsed = raw === null ? null : JSON.parse(raw)
+          return parsed !== null && typeof parsed === 'object' ? parsed : {}
+        } catch { return {} }
+      })()
+      const [kids, setKids] = React.useState(() => (savedUi.kids !== null && typeof savedUi.kids === 'object' ? savedUi.kids : {}))
+      const [openFolders, setOpenFolders] = React.useState(() => (savedUi.openFolders !== null && typeof savedUi.openFolders === 'object' ? savedUi.openFolders : {}))
+      const [folderId, setFolderId] = React.useState(() => (typeof savedUi.folderId === 'string' && savedUi.folderId !== '' ? savedUi.folderId : null))
       const [page, setPage] = React.useState({ total: 0, offset: 0, returned: 0, folderPath: '', mails: [], unreadInFolder: -1 })
       const [listState, setListState] = React.useState('loading')
       const [sel, setSel] = React.useState([])
@@ -653,7 +665,7 @@ window.__ModuleLoader__.load({
             setSample(data.sample === true)
           }
         } catch { /* keep the com default */ }
-        setFolderId(INBOX)
+        setFolderId((prev) => (prev === null || prev === '' ? INBOX : prev))
         // Let the list effect dispatch its request before the folder walk takes
         // the bridge queue (the bridge handles one call at a time).
         await new Promise((resolve) => setTimeout(resolve, 60))
@@ -1115,6 +1127,14 @@ window.__ModuleLoader__.load({
       React.useEffect(() => {
         if (askOpen && askEndRef.current !== null) askEndRef.current.scrollIntoView({ block: 'end' })
       }, [askOpen, askLog.length])
+
+      // Mirror the rail's shape and the open folder after every change, so the
+      // next open shows the same tree without waiting on the bridge.
+      React.useEffect(() => {
+        try {
+          localStorage.setItem(UI_KEY, JSON.stringify({ folderId, kids, openFolders }))
+        } catch { /* quota, or private mode: the panel still works */ }
+      }, [folderId, kids, openFolders])
 
 
       // While folderId is still the "Inbox" NAME (first paint), no entryId can

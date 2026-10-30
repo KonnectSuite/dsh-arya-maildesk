@@ -20,6 +20,50 @@ function Out-Json($obj) {
   $obj | ConvertTo-Json -Depth 6
 }
 
+function Get-SmtpAddress($item) {
+  # SenderEmailAddress is a plain SMTP address for external senders and an
+  # "EX:/O=..." directory name for colleagues inside the same Exchange org.
+  # The Exchange user behind it knows the primary SMTP address, so a reply can
+  # be addressed instead of silently leaving To empty.
+  $addr = ''
+  try { $addr = [string]$item.SenderEmailAddress } catch { $addr = '' }
+  if ($addr -like '*@*') { return $addr }
+  try {
+    $ex = $item.Sender.GetExchangeUser()
+    if ($null -ne $ex) {
+      $smtp = [string]$ex.PrimarySmtpAddress
+      if ($smtp -like '*@*') { return $smtp }
+    }
+  } catch { }
+  return $addr
+}
+
+function Get-RecipientLines($item, $type) {
+  # Recipients as "Name <smtp>" lines, resolving Exchange directory entries the
+  # same way the sender is resolved. Used for reply-all, which otherwise gets a
+  # list of display names it cannot send to.
+  $lines = @()
+  try {
+    foreach ($r in $item.Recipients) {
+      try { if ([int]$r.Type -ne $type) { continue } } catch { continue }
+      $smtp = ''
+      try { $smtp = [string]$r.Address } catch { $smtp = '' }
+      if ($smtp -notlike '*@*') {
+        try {
+          $ex = $r.AddressEntry.GetExchangeUser()
+          if ($null -ne $ex) { $smtp = [string]$ex.PrimarySmtpAddress }
+        } catch { }
+      }
+      if ($smtp -like '*@*') {
+        $name = ''
+        try { $name = [string]$r.Name } catch { $name = '' }
+        $lines += $(if ($name -ne '') { '"' + $name + '" <' + $smtp + '>' } else { $smtp })
+      }
+    }
+  } catch { }
+  return $lines
+}
+
 function New-FolderRow($f, $store, $depth, $withCounts) {
   # One rail row. Enumerating a whole Exchange mailbox costs one COM read per
   # folder (30-90 ms each: 545 folders = 16 s), so the panel asks for the
@@ -241,14 +285,15 @@ try {
       $out.subject = [string]$it.Subject
       $out.sender = [string]$it.SenderName
       # SenderEmailAddress is an EX:/O=... directory name on a corporate
-      # Exchange mailbox, so the caller must test it for '@' before offering it
-      # as a reply recipient; the display name is always usable for display.
-      $senderSmtp = $null
-      try { $senderSmtp = [string]$it.SenderEmailAddress } catch {}
+      # Exchange mailbox; Get-SmtpAddress resolves it through the Exchange user
+      # so a reply can be addressed, and falls back to the raw value.
+      $senderSmtp = Get-SmtpAddress $it
       $out.senderSmtp = $senderSmtp
       $out.received = if ($it.ReceivedTime) { $it.ReceivedTime.ToString('yyyy-MM-dd HH:mm') } else { $null }
-      $out.to = [string]$it.To
-      $out.cc = [string]$it.CC
+      $toLines = Get-RecipientLines $it 1
+      $ccLines = Get-RecipientLines $it 2
+      $out.to = if ($toLines.Count -gt 0) { $toLines -join '; ' } else { [string]$it.To }
+      $out.cc = if ($ccLines.Count -gt 0) { $ccLines -join '; ' } else { [string]$it.CC }
       $out.bcc = [string]$it.BCC
       $body = [string]$it.Body
       $maxChars = if ($args_.maxChars) { [int]$args_.maxChars } else { 8000 }

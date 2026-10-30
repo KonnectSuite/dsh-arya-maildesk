@@ -89,7 +89,7 @@ on the real mailbox, the rest have not:
 |---|---|
 | Panel | folder rail, list, reading pane, paging, selection, mark read/move/delete round-trips through the real route (`docs/panel.png`) |
 | Safe reading pane | allowlisted HTML, `<script>`/`on*` dropped, remote image → `🖼 (remote image blocked)` chip, Proofpoint `urldefense` link resolved (`docs/panel-html.png`) |
-| Composer | Reply all prefilled To/Cc/Subject, quoted original, two-step confirm, `Sent` toast, Drafts unchanged + Sent Items +1 (`docs/compose.png`, `docs/compose-confirm.png`) |
+| Composer | Reply all prefilled To/Cc/Subject (real SMTP addresses, Exchange senders resolved, self excluded), quoted original, two-step confirm, `Sent` toast, Drafts unchanged + Sent Items +1 (`docs/compose.png`, `docs/compose-confirm.png`) |
 | Draft card | keyed `tool.call.toolview` row on the host draft, `[Edit in panel] [Send…] [Discard]` (`docs/draft-card.png`) |
 | Draft beside chat | real right-Sidebar tab, conversation still visible (`docs/panel-beside-chat.png`) |
 | No classic Outlook | the panel names the reason instead of reporting zero mail (`docs/panel-new-outlook.png`) |

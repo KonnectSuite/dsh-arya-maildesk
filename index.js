@@ -1037,7 +1037,7 @@ export function apply(ctx) {
       const m = /^(.*)<([^>]+)>$/.exec(x)
       if (m) return { name: m[1].trim().replace(/^["']|["']$/g, ''), email: m[2].trim() }
       return { name: '', email: x }
-    })
+    }).filter((a) => a.email.includes('@'))
     const formatAddrList = (list) => asList(list)
       .map((a) => (a && a.email ? (a.name ? '"' + a.name + '" <' + a.email + '>' : a.email) : ''))
       .filter(Boolean).join('; ')

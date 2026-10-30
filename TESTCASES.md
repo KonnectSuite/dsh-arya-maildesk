@@ -32,6 +32,8 @@ Performed 2026-10-30 on the owner's work laptop, counts restored after each dest
 | compose → review → send confirmation shows the body | pass (walked `New → Send… → Back`; nothing sent) |
 | reply-all with Exchange senders (`EX:/O=…`) | pass — To/Cc resolved to SMTP |
 | one real send by the owner | pass (`RE: Asset Center`, present in Sent Items and Inbox) |
+| assistant composes, edits, cc's and sends through the tool path | pass — the reply to Bill Friedman went out from the panel card after the `CreateItem` fix, with the thread's recipients cc'd |
+| send fails cleanly when the bridge is broken | pass — three attempts returned the error and **nothing** was sent (Sent Items checked each time); no duplicate, no orphan draft |
 | conversation view | pass — four-message thread, three people, current message expanded |
 | Focused / Other | pass — first page split 82 / 18 |
 | hide an account, then show it | pass — rail and `list_folders` both changed |

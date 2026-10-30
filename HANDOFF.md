@@ -376,6 +376,13 @@ Sent Items and arrived back in the Inbox at the same minute. That exercise cover
 composer, content hash, confirmation, bridge token, Outlook send and Exchange delivery — and it is the first mail
 this project has ever sent.
 
+**The same day it broke and was fixed.** The assistant's own send path (compose → edit → cc → send) failed three
+times with `You cannot call a method on a null-valued expression`: `Connect-Outlook` returned the MAPI namespace but
+kept the `Application` object local, so `$outlook.CreateItem()` was a call on null. Replies from the panel kept
+working because `Reply()` comes off the item, which is why nothing caught it earlier. Fixed by parking the object at
+script scope, with `test/bridge-scope.test.ps1` guarding the invariant; the owner's retry then went out and reached
+Sent Items. The failure behaviour was clean throughout: no send, no duplicate, no orphan draft.
+
 Open:
 
 - **1.1.0 is built and installed here but not on npm** — this machine has no npm credential (`~/.npmrc`,

@@ -847,7 +847,7 @@ export function apply(ctx) {
       } catch { /* the assistant still works for this process */ }
     }
 
-    const askState = { sessionId: readAskSession(), asked: new Set() }
+    const askState = { sessionId: readAskSession() }
 
     const createAskSession = async (controller) => {
       const created = await controller.create({})
@@ -935,8 +935,12 @@ export function apply(ctx) {
               if (text === '') continue
               if (event.type === 'user/message') {
                 if (looksLikeHarnessContext(text)) continue
+                // A message a person sent carries the rpc id the harness minted
+                // for it; the harness's own context injections do not. Keying on
+                // that (rather than on an in-memory list) keeps the questions in
+                // the transcript after a reload too.
                 const source = event.data && event.data.source
-                if (source !== null && typeof source === 'object' && typeof source.rpcId === 'string' && !askState.asked.has(source.rpcId)) continue
+                if (source === null || typeof source !== 'object' || typeof source.rpcId !== 'string' || source.rpcId === '') continue
               }
               messages.push({ seq: event.seq, role: event.type === 'user/message' ? 'user' : 'assistant', text })
             }
@@ -967,7 +971,6 @@ export function apply(ctx) {
           ].filter(Boolean).join(', ')
           const composed = context === '' ? text : text + '\n\n(mail panel · ' + context + ')'
           const requestId = randomUUID()
-          askState.asked.add(requestId)
           // The controller owns the durable source; its second argument is a
           // cancellation signal, not prompt metadata.
           const send = () => controller.prompt(

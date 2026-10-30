@@ -41,10 +41,13 @@ const controller = {
       cursor: 3,
       hasMore: false,
       records: [
-        { event: { seq: 1, type: 'user/message', data: { message: { content: [{ type: 'text', text: 'anything new?' }] } } } },
+        { event: { seq: 1, type: 'user/message', data: { source: { kind: 'user', rpcId: 'r-1' }, message: { content: [{ type: 'text', text: 'anything new?' }] } } } },
         { event: { seq: 2, type: 'tool/call', data: { name: 'maildesk_list_mail' } } },
         { event: { seq: 3, type: 'assistant/message', data: { message: { content: [{ type: 'text', text: 'Five unread.' }, { type: 'tool-call', id: 'x' }] } } } },
         { event: { seq: 4, type: 'assistant/message', data: { message: { content: [{ type: 'text', text: '   ' }] } } } },
+        // A harness context injection: a user-role message with no rpc id.
+        { event: { seq: 5, type: 'user/message', data: { message: { content: [{ type: 'text', text: 'Current runtime context. This snapshot supersedes earlier ones.' }] } } } },
+        { event: { seq: 6, type: 'user/message', data: { message: { content: [{ type: 'text', text: '<system-reminder>skills</system-reminder>' }] } } } },
       ],
     }
   },

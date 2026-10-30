@@ -262,6 +262,7 @@ window.__ModuleLoader__.load({
     '.md-move-list{max-height:300px;overflow:auto;border:1px solid #e6e6e6;border-radius:8px;margin:8px 0;background:#fff}',
     '.md-move-row{display:block;width:100%;text-align:left;padding:6px 9px;font-size:12px;background:none;border:0;border-bottom:1px solid #f2f2f2;cursor:pointer;color:inherit;font:inherit}',
     '.md-move-row:hover{background:#f4f6fa}',
+    '.md-search{width:170px;flex:none;font:inherit;font-size:12px;padding:4px 8px;border:1px solid #d8dde5;border-radius:7px;background:#fff}',
     '.md-ask-empty{opacity:.65;font-size:12px;line-height:1.45}',
     '.md-ask-err{color:#e5484d;font-size:12px}',
     '.md-ask-compose{display:flex;gap:8px;padding:8px 10px;align-items:flex-end}',
@@ -608,6 +609,12 @@ window.__ModuleLoader__.load({
       const [moveFilter, setMoveFilter] = React.useState('')
       const [allFolders, setAllFolders] = React.useState(null)
       const [moveBusy, setMoveBusy] = React.useState(false)
+      // Search is a mode over the same list: results replace the folder page
+      // until cleared, and selection/actions work on them unchanged.
+      const [searchText, setSearchText] = React.useState('')
+      const [submittedSearch, setSubmittedSearch] = React.useState('')
+      const [searchRows, setSearchRows] = React.useState(null)
+      const [searchBusy, setSearchBusy] = React.useState(false)
       // The composer is a draft the HOST owns (see index.js compose routes):
       // this component only edits it and asks for a send. Nothing here creates
       // an Outlook item, so re-opening a reply cannot stack a second draft.
@@ -1211,17 +1218,58 @@ window.__ModuleLoader__.load({
         h('button', { className: 'md-btn', type: 'button', disabled: busy !== '' || selectionCount !== 1, onClick: () => void openCompose('forward') }, 'Forward'),
         h('span', { className: 'md-selinfo' }, selectionCount > 0 ? selectionCount + ' selected' : 'no selection'))
 
+      // Outlook's own filter engine, reached the same way the tool is: subject
+      // first, then sender, because a person typing "Dana" means either.
+      const runSearch = async (text) => {
+        const query = text.trim()
+        if (query === '') {
+          setSearchRows(null)
+          setSubmittedSearch('')
+          return
+        }
+        setSearchBusy(true)
+        setSubmittedSearch(query)
+        setSel([])
+        setOpenId(null)
+        setOpenMail(null)
+        setReadState('idle')
+        try {
+          let result = await call('search_mail', { subjectContains: query, limit: 100, days: 365 })
+          let mails = Array.isArray(result.mails) ? result.mails : []
+          if (mails.length === 0) {
+            result = await call('search_mail', { from: query, limit: 100, days: 365 })
+            mails = Array.isArray(result.mails) ? result.mails : []
+          }
+          setSearchRows(mails)
+        } catch (error) {
+          setSearchRows([])
+          announce(error.message, true)
+        } finally {
+          setSearchBusy(false)
+        }
+      }
+
+      const clearSearch = () => {
+        setSearchText('')
+        setSubmittedSearch('')
+        setSearchRows(null)
+      }
+
+      const listMails = searchRows !== null ? searchRows : page.mails
+
       const rows = (() => {
-        if (listState === 'loading') {
+        if (listState === 'loading' && searchRows === null) {
           return [0, 1, 2, 3, 4, 5, 6].map((i) => h('div', { key: i, className: 'md-skel' }, h('div'), h('div'), h('div')))
         }
-        if (listState === 'error') return null
-        if (page.mails.length === 0) {
+        if (listState === 'error' && searchRows === null) return null
+        if (listMails.length === 0) {
           return h('div', { className: 'md-empty' },
-            h('div', { className: 'md-empty-h' }, unreadOnly ? 'No unread mail here' : 'This folder is empty'),
-            h('div', null, page.folderPath || ''))
+            h('div', { className: 'md-empty-h' }, searchRows !== null
+              ? 'Nothing matches "' + submittedSearch + '"'
+              : (unreadOnly ? 'No unread mail here' : 'This folder is empty')),
+            h('div', null, searchRows !== null ? 'Search covers this folder; try another word or clear the search.' : (page.folderPath || '')))
         }
-        return page.mails.map((m) => h('div', {
+        return listMails.map((m) => h('div', {
           key: m.entryId,
           className: 'md-row' + (m.unread ? '' : ' read') + (sel.includes(m.entryId) ? ' sel' : '') + (m.entryId === openId ? ' open' : ''),
           role: 'option',
@@ -1452,6 +1500,24 @@ window.__ModuleLoader__.load({
             ? h('button', { className: 'md-btn', type: 'button', disabled: busy !== '', onClick: () => void switchSampleMail(false) }, 'Back to live mail')
             : null,
           page.folderPath ? h('span', { className: 'md-pill' }, page.folderPath) : null,
+          h('input', {
+            className: 'md-search',
+            type: 'search',
+            placeholder: 'Search mail…',
+            value: searchText,
+            title: 'Search this folder by subject, then by sender',
+            onChange: (ev) => setSearchText(ev.target.value),
+            onKeyDown: (ev) => {
+              if (ev.key === 'Enter') {
+                ev.preventDefault()
+                ev.stopPropagation()
+                void runSearch(searchText)
+              } else if (ev.key === 'Escape') {
+                ev.stopPropagation()
+                clearSearch()
+              }
+            },
+          }),
           h('span', { className: 'md-spacer' }),
           h('label', { className: 'md-selinfo', style: { display: 'flex', alignItems: 'center', gap: 5, cursor: 'pointer' } },
             h('input', { type: 'checkbox', checked: unreadOnly, onChange: (ev) => { setUnreadOnly(ev.target.checked); setSel([]) } }),
@@ -1491,10 +1557,19 @@ window.__ModuleLoader__.load({
             toolbar,
             h('div', { className: 'md-rows', ref: rowsRef, role: 'listbox', 'aria-label': 'Messages', 'aria-multiselectable': true }, rows),
             h('div', { className: 'md-pager' },
+              searchRows !== null
+                ? [
+                    h('span', { key: 'found' }, searchBusy
+                      ? 'Searching…'
+                      : searchRows.length + ' result' + (searchRows.length === 1 ? '' : 's') + ' for "' + submittedSearch + '"'),
+                    h('span', { key: 'sp', className: 'md-spacer' }),
+                    h('button', { key: 'clear', className: 'md-btn', type: 'button', onClick: clearSearch }, 'Clear search'),
+                  ]
+                : null,
               // While the page is in flight the counters are still zeroed, and
               // "1–0 of 0 · unread count unavailable" reads like an empty
               // mailbox. Say what is actually happening.
-              listState === 'loading'
+              searchRows !== null ? null : listState === 'loading'
                 ? [h('span', { key: 'loading' }, 'Loading…'), h('span', { key: 'sp', className: 'md-spacer' })]
                 : [
                     h('span', { key: 'range' }, page.offset + 1 + '–' + (page.offset + page.returned) + ' of ' + page.total),

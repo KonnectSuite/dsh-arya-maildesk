@@ -283,7 +283,9 @@ silently.
    else must be addressed by entryId from `maildesk_list_folders`.
 7. **Drafts are in memory.** A host restart loses unsent drafts.
 8. **`move_mail` changes entryIds** — re-read after a move.
-9. **No search box in the panel.** `maildesk_search_mail` exists as a tool only.
+9. **Search covers one folder at a time.** The panel's search box asks the bridge for the *current* folder, subject
+   first and sender second; there is no whole-mailbox or free-text search, and `maildesk_search_mail` still does
+   the richer queries (dates, recipient, other folders) from chat.
 10. **The panel agent is new and thin.** It keeps ONE session per host process (`Mail assistant`, titled on
     creation) and creates a fresh one after a restart; it polls the transcript every 1.5 s instead of streaming;
     it shows the conversation but not the tool calls the agent made; and its session is a normal workspace

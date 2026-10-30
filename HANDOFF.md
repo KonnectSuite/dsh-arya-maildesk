@@ -1,4 +1,4 @@
-# HANDOFF — dsh-arya-maildesk
+﻿# HANDOFF — dsh-arya-maildesk
 
 State of the published release, what was verified, what is still open, and how to continue on a machine
 that actually has classic Outlook. Keep this current when a version ships.
@@ -8,17 +8,17 @@ that actually has classic Outlook. Keep this current when a version ships.
 | | |
 |---|---|
 | Package | `@aryacode/dsh-arya-maildesk` |
-| Version | **1.0.1** |
+| Version | **1.0.2** |
 | Repository | `KonnectSuite/dsh-arya-maildesk` (public) |
-| Built from commit | `d41b047` — `fix: the bundle patch named an unscoped package, so 1.0.0 could install but never activate (1.0.1)` |
-| Published tarball | `https://registry.npmjs.org/@aryacode/dsh-arya-maildesk/-/dsh-arya-maildesk-1.0.1.tgz` |
-| sha256 | `7186fe0abe81b8cf3254166663fafaff71dc2a8b3e8feaeefbd338119385d4da` (83,353 bytes) |
-| npm shasum | `3b4764aef530d5f22e92880b871321acf0d2b0d5` |
-| GitHub release | `https://github.com/KonnectSuite/dsh-arya-maildesk/releases/tag/v1.0.1` |
+| Built from commit | `8916a85` — `fix: the browser bundle named itself by an old name too (1.0.2)` |
+| Published tarball | `https://registry.npmjs.org/@aryacode/dsh-arya-maildesk/-/dsh-arya-maildesk-1.0.2.tgz` |
+| sha256 | `9c18b78bbb358c57a98c794eb44dc68d7087deb3e794c93a4554c3d58e15fa0b` (84,039 bytes) |
+| npm shasum | `b4cafd334ef7ab164fbb4cbc6dbbf79f83ec86c2` |
+| GitHub release | `https://github.com/KonnectSuite/dsh-arya-maildesk/releases/tag/v1.0.2` |
 | Host requirement | `dsh.engines.dsh`: `^0.2.1-rc.3 \|\| >=0.2.2-alpha.2` |
 | Licence | MIT (fork of `UnknowCao/dsh-outlook` @ `5a2ec7d`; see `NOTICE`) |
 
-`1.0.0` is **deprecated on npm**: it installed and then failed to activate (see *The 1.0.0 bug* below).
+`1.0.0` and `1.0.1` are **deprecated on npm**: each installed and then failed to activate (see *Two bugs the tests could not see* below).
 The unscoped `dsh-arya-maildesk` name is deprecated too; its `0.0.0-stage` stub is inert and can only be
 removed in the npm UI.
 
@@ -148,7 +148,7 @@ For each rung: pass/fail and, on failure, the verbatim error. If rung 1 passes, 
 rest is polish. If it fails, the string above identifies the layer. Record which rung first diverged — that
 is the whole value of the session.
 
-## The 1.0.0 bug (why the guard exists)
+## Two bugs the tests could not see (why the guard exists)
 
 1.0.0 installed cleanly on a work laptop and then refused to activate:
 
@@ -167,6 +167,32 @@ stay scoped, every entry point must exist **and** be in `files`, and `dsh.engine
 
 **Lesson:** tests that exercise code do not prove a package mounts. Anything the loader reads by name needs
 its own assertion.
+
+### 1.0.1 — same bug, one layer down
+
+1.0.1 fixed the patch row and the installed app still refused to boot:
+
+```
+web boot: 1 entry did not activate
+@aryacode/dsh-arya-maildesk: import failed (see console for the import error)
+```
+
+The console held the real line: `client-modules: could not load "@aryacode/dsh-arya-maildesk"`. `client.js`
+called `window.__ModuleLoader__.load({ id: 'dsh-arya-maildesk' })` — **unscoped** — while the boot module
+table keys every client bundle by *package name*. The host half was fine (24 tools registered, the bridge
+answered); the browser half registered itself where nothing looks for it. Development hid it exactly the
+same way: the dev profile links the repo under the unscoped name.
+
+1.0.2 fixes the id, and `test/bundle.test.mjs` grew a 15th check: the module id must equal `package.json`'s
+`name`. Replaying 1.0.1's `client.js` through the guard fails on that line, which is the point.
+
+**Reproduce a bug like this by installing the packed tarball.** The dev lane's `file:` link resolves stale
+names by luck. The fatal signal is `entry did not activate` — never `Done in 4.1s`.
+
+Verified after the fix (this PC, installed AryaCode, desktop profile): the sidebar shows **Mail**, the 25
+`maildesk_*` tools are registered, and `maildesk_account` answers the honest new-Outlook message below
+instead of failing silently.
+
 
 ## Known gaps
 

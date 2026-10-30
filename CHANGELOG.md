@@ -2,6 +2,20 @@
 
 This project's version narrative puts **why** before **what**. Every entry starts with the motivation.
 
+## 1.0.3 — A mailbox you can look at, on a machine with no Outlook
+
+**Why**: installing the plugin on a PC whose Outlook is the new WebView2 client produced a correct panel and nothing to look at — a banner, disabled buttons, and an empty list. That is honest, but it is also the first thing a new user sees, and "nothing is working" is the only reasonable reading. The fixture already existed for exactly this (`MAILDESK_FIXTURE=1`), but an environment variable is not something a person installing from the market can set. The panel now offers the sample mailbox itself.
+
+**What changed**:
+- `POST /maildesk/api/fixture` switches the host's provider between live COM and the sample mailbox at runtime; `GET /maildesk/api/health` reports `sample: true` when the switch is what enabled it, so `MAILDESK_FIXTURE=1` and the button stay distinguishable.
+- The no-Outlook banner gained **Preview with sample mail**, and the header shows a `SAMPLE MAIL` pill with **Back to live mail** while the sample mailbox is on. The label is deliberately different from `FIXTURE DATA`: one is a developer's environment variable, the other is a person looking at the interface.
+- `test/sample-mail.test.mjs` (17 assertions) starts with no fixture, proves the live provider fails loudly instead of returning an empty mailbox, switches on, checks the folders/rows/read path through the same routes the panel uses, switches back, and covers the route's own guards (405/403/400).
+- `npm test` now runs the bundle guard, the panel API suite, the sample-mail suite and the PowerShell suites in that order.
+
+The tools share the provider, so an agent asking for mail sees the same sample mailbox the panel shows — and never a real one by accident.
+
+---
+
 ## 1.0.2 — The browser bundle named itself by an old name too
 
 **Why**: 1.0.1 fixed the bundle patch and still broke the app. Installing it on a machine with the packaged tarball produced, at web boot, `web boot: 1 entry did not activate @aryacode/dsh-arya-maildesk: import failed: client-modules: could not load "@aryacode/dsh-arya-maildesk"` — the host half registered all 24 tools and the window never appeared. Same mistake as 1.0.0, one layer down: `client.js` called `window.__ModuleLoader__.load({ id: 'dsh-arya-maildesk' })`, unscoped, while the module table keys every client bundle by **package name**. The module therefore registered under a name nothing imports. It passed every test and every development run for the same reason 1.0.0 did: the dev profile links this repository under the unscoped name, so the stale id resolved by luck, and the packed tarball is the first install that ever disagreed with it.

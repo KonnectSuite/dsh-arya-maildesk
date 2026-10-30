@@ -8,13 +8,13 @@ that actually has classic Outlook. Keep this current when a version ships.
 | | |
 |---|---|
 | Package | `@aryacode/dsh-arya-maildesk` |
-| Version | **1.0.2** |
+| Version | **1.0.3** |
 | Repository | `KonnectSuite/dsh-arya-maildesk` (public) |
-| Built from commit | `8916a85` — `fix: the browser bundle named itself by an old name too (1.0.2)` |
-| Published tarball | `https://registry.npmjs.org/@aryacode/dsh-arya-maildesk/-/dsh-arya-maildesk-1.0.2.tgz` |
-| sha256 | `9c18b78bbb358c57a98c794eb44dc68d7087deb3e794c93a4554c3d58e15fa0b` (84,039 bytes) |
+| Built from commit | see `git log -1 --format=%h` at the time of publishing (1.0.3: sample mailbox toggle) |
+| Published tarball | `https://registry.npmjs.org/@aryacode/dsh-arya-maildesk/-/dsh-arya-maildesk-1.0.3.tgz` |
+| sha256 | `e2568c63d1104721fffd9a5a7e3666675bbecb5a25e7b04cf1a3a745e8dad579` (85,629 bytes) |
 | npm shasum | `b4cafd334ef7ab164fbb4cbc6dbbf79f83ec86c2` |
-| GitHub release | `https://github.com/KonnectSuite/dsh-arya-maildesk/releases/tag/v1.0.2` |
+| GitHub release | `https://github.com/KonnectSuite/dsh-arya-maildesk/releases/tag/v1.0.3` |
 | Host requirement | `dsh.engines.dsh`: `^0.2.1-rc.3 \|\| >=0.2.2-alpha.2` |
 | Licence | MIT (fork of `UnknowCao/dsh-outlook` @ `5a2ec7d`; see `NOTICE`) |
 

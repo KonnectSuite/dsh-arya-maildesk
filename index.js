@@ -339,7 +339,25 @@ function makeFixture() {
   return { folders, folderById: new Map(folders.map((f) => [f.entryId, f])) }
 }
 
-const fixture = FIXTURE_ON ? makeFixture() : null
+// The sample mailbox. `MAILDESK_FIXTURE=1` makes it the provider for the whole
+// session, and the panel's own "Preview with sample mail" button can also switch
+// to it at runtime — a machine whose Outlook is the new WebView2 client has no
+// COM surface at all, and without this the panel is an error message with nothing
+// to look at. Either way it is never mistaken for a real mailbox: the header says
+// SAMPLE MAIL and the tools answer from the same data.
+let fixture = FIXTURE_ON ? makeFixture() : null
+let sampleMail = fixture
+
+/** Switch the provider to the sample mailbox (on) or back to live COM (off). */
+function setSampleMail(on) {
+  if (on) {
+    if (sampleMail === null) sampleMail = makeFixture()
+    fixture = sampleMail
+  } else {
+    fixture = FIXTURE_ON ? sampleMail : null
+  }
+  return fixture === null ? 'com' : 'fixture'
+}
 
 function fixtureCall(action, args = {}) {
   const ok = (extra) => ({ status: 'ok', ...extra })
@@ -693,9 +711,36 @@ export function apply(ctx) {
         if (req.method !== 'GET') { res.statusCode = 405; res.end(); return }
         if (!sameOrigin(req)) { res.statusCode = 403; res.end(); return }
         res.setHeader('Content-Type', 'application/json; charset=utf-8')
-        res.end(JSON.stringify({ ok: true, provider: fixture !== null ? 'fixture' : 'com' }))
+        res.end(JSON.stringify({
+          ok: true,
+          provider: fixture !== null ? 'fixture' : 'com',
+          // `sample` is true only when this session's provider is the sample
+          // mailbox, so the panel can offer "back to live mail" instead of
+          // pretending MAILDESK_FIXTURE=1 was set.
+          sample: fixture !== null && !FIXTURE_ON,
+        }))
       },
     }), 'dsh-arya-maildesk: panel health route')
+
+    // Switch provider between the sample mailbox and live COM.
+    ctx.effect(() => webCtx.webServer.register({
+      kind: 'exact',
+      path: '/maildesk/api/fixture',
+      handler: async (req, res) => {
+        if (req.method !== 'POST') { res.statusCode = 405; res.end(); return }
+        if (!sameOrigin(req)) { res.statusCode = 403; res.end(); return }
+        const parsed = await readJsonBody(req, 4096)
+        if (parsed.error !== undefined) {
+          res.statusCode = 400
+          res.setHeader('Content-Type', 'application/json; charset=utf-8')
+          res.end(JSON.stringify({ ok: false, error: parsed.error }))
+          return
+        }
+        const provider = setSampleMail(parsed.value !== null && typeof parsed.value === 'object' && parsed.value.on === true)
+        res.setHeader('Content-Type', 'application/json; charset=utf-8')
+        res.end(JSON.stringify({ ok: true, provider, sample: provider === 'fixture' && !FIXTURE_ON }))
+      },
+    }), 'dsh-arya-maildesk: sample mailbox route')
 
     const readJsonBody = async (req, cap) => {
       let body = ''

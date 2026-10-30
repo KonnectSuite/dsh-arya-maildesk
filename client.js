@@ -562,6 +562,7 @@ window.__ModuleLoader__.load({
       const [sort, setSort] = React.useState('received')
       const [limit, setLimit] = React.useState(100)
       const [provider, setProvider] = React.useState('com')
+      const [sample, setSample] = React.useState(false)
       const [moveTo, setMoveTo] = React.useState('')
       // The composer is a draft the HOST owns (see index.js compose routes):
       // this component only edits it and asks for a send. Nothing here creates
@@ -587,27 +588,57 @@ window.__ModuleLoader__.load({
         setTimeout(() => setToast(null), 2800)
       }
 
-      React.useEffect(() => {
-        void (async () => {
-          try {
-            const res = await fetch(HEALTH_URL)
-            const data = await res.json()
-            if (data && data.ok === true) setProvider(data.provider === 'fixture' ? 'fixture' : 'com')
-          } catch { /* keep the com default */ }
-          try {
-            const result = await call('list_folders', { maxDepth: 6 })
-            const list = Array.isArray(result.folders) ? result.folders : []
-            setFolders(list)
-            const first = list.find((f) => /^inbox$/i.test(f.name)) || list[0]
-            if (first) setFolderId(first.entryId)
-            else setListState('empty')
-          } catch (error) {
-            setError(error.message)
-            setFolders([])
-            setListState('error')
+      // Load the mailbox: provider label, folder tree, then the first folder.
+      // Extracted so the "Preview with sample mail" button can re-run it after
+      // switching the host's provider.
+      const boot = async () => {
+        try {
+          const res = await fetch(HEALTH_URL)
+          const data = await res.json()
+          if (data && data.ok === true) {
+            setProvider(data.provider === 'fixture' ? 'fixture' : 'com')
+            setSample(data.sample === true)
           }
-        })()
-      }, [])
+        } catch { /* keep the com default */ }
+        try {
+          const result = await call('list_folders', { maxDepth: 6 })
+          const list = Array.isArray(result.folders) ? result.folders : []
+          setFolders(list)
+          const first = list.find((f) => /^inbox$/i.test(f.name)) || list[0]
+          if (first) setFolderId(first.entryId)
+          else setListState('empty')
+        } catch (error) {
+          setError(error.message)
+          setFolders([])
+          setPage({ folderPath: '', total: 0, offset: 0, returned: 0, unreadInFolder: 0 })
+          setListState('error')
+        }
+      }
+
+      // Flip the host between the sample mailbox and live COM, then reload.
+      const switchSampleMail = async (on) => {
+        setBusy('sample')
+        try {
+          const res = await fetch('/maildesk/api/fixture', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ on }),
+          })
+          const data = await res.json()
+          if (!data || data.ok !== true) throw new Error((data && data.error) || 'the provider did not switch')
+          setError('')
+          setFolderId(null)
+          setListState('loading')
+          await boot()
+          announce(on ? 'Showing sample mail — nothing here is real' : 'Back to live mail', false)
+        } catch (error) {
+          announce(error.message, true)
+        } finally {
+          setBusy('')
+        }
+      }
+
+      React.useEffect(() => { void boot() }, [])
 
       React.useEffect(() => {
         if (folderId === null) return
@@ -1149,8 +1180,16 @@ window.__ModuleLoader__.load({
         h('div', { className: 'md-top' },
           h('span', { className: 'md-title' }, 'Mail'),
           provider === 'fixture'
-            ? h('span', { className: 'md-pill fixture', title: 'MAILDESK_FIXTURE=1 — this is synthetic mail, not a mailbox' }, 'FIXTURE DATA')
+            ? h('span', {
+                className: 'md-pill fixture',
+                title: sample
+                  ? 'Sample mailbox — synthetic mail, so you can look at the interface on a machine without classic Outlook'
+                  : 'MAILDESK_FIXTURE=1 — this is synthetic mail, not a mailbox',
+              }, sample ? 'SAMPLE MAIL' : 'FIXTURE DATA')
             : h('span', { className: 'md-pill' }, 'Classic Outlook · COM'),
+          sample
+            ? h('button', { className: 'md-btn', type: 'button', disabled: busy !== '', onClick: () => void switchSampleMail(false) }, 'Back to live mail')
+            : null,
           page.folderPath ? h('span', { className: 'md-pill' }, page.folderPath) : null,
           h('span', { className: 'md-spacer' }),
           h('label', { className: 'md-selinfo', style: { display: 'flex', alignItems: 'center', gap: 5, cursor: 'pointer' } },
@@ -1169,7 +1208,14 @@ window.__ModuleLoader__.load({
         error !== '' && listState === 'error'
           ? h('div', { className: 'md-err', role: 'alert' },
               noOutlook
-                ? 'No classic Outlook answered on this machine.\n\nThis panel drives desktop Outlook over COM. If this PC uses the new Outlook (the WebView2 client), or Office is not installed, there is no COM surface to drive — install classic Outlook, or set MAILDESK_FIXTURE=1 to work on the interface with synthetic mail.\n\n' + error
+                ? h('div', null,
+                    'No classic Outlook answered on this machine.',
+                    h('div', { style: { marginTop: 8 } },
+                      'This panel drives desktop Outlook over COM. If this PC uses the new Outlook (the WebView2 client), or Office is not installed, there is no COM surface to drive — install classic Outlook, or look at the interface with the sample mailbox.'),
+                    h('div', { style: { marginTop: 10, display: 'flex', gap: 8, alignItems: 'center' } },
+                      h('button', { className: 'md-btn primary', type: 'button', disabled: busy !== '', onClick: () => void switchSampleMail(true) }, busy === 'sample' ? 'Loading…' : 'Preview with sample mail'),
+                      h('span', { style: { opacity: .7 } }, 'Synthetic mail, labelled SAMPLE MAIL — nothing is sent or saved.')),
+                    h('div', { style: { marginTop: 8, opacity: .75, fontSize: 11 } }, error))
                 : error)
           : null,
         h('div', { className: 'md-body' },

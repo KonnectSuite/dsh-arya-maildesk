@@ -1,4 +1,4 @@
-# dsh-arya-maildesk
+﻿# dsh-arya-maildesk
 
 > **Let an AI drive the Outlook you are already logged into, on a work laptop where IT will not give you a Graph API permission.**
 > No credentials, no admin rights, and nothing leaves the machine without asking you first.
@@ -60,7 +60,11 @@ A **Mail** icon in the sidebar opens a three-pane mailbox: folder rail, message 
 
 The data path is one allowlisted host route, `POST /maildesk/api/call`, guarded by the same origin check as the badge. It accepts `account`, `list_folders`, `list_mail`, `read_mail`, `mark_read`, `move_mail`, `delete_mail` and `open_mail`. **Sending is not on that list**, and cannot be reached through it.
 
-No Outlook on this machine? `MAILDESK_FIXTURE=1` serves a synthetic mailbox and the header says `FIXTURE DATA`, so the interface can be developed and reviewed without COM. It is opt-in on purpose: a COM failure is reported as an error, never answered with invented mail.
+No Outlook on this machine? A PC whose Outlook is the new WebView2 client has no COM surface at all, and the panel says so instead of showing an empty mailbox. From there, **Preview with sample mail** switches the panel (and the tools) to a synthetic mailbox so the interface can be seen and used; the header then reads `SAMPLE MAIL` with a **Back to live mail** button. Data is never mixed: the pill always says which one you are looking at.
+
+![The sample mailbox, clearly labelled](docs/panel-sample-mail.png)
+
+`MAILDESK_FIXTURE=1` does the same thing for the whole session, without the button, and labels it `FIXTURE DATA` — that is the developer's switch. A COM failure is always reported as an error, never answered with invented mail.
 
 ### Reading mail safely
 
@@ -210,7 +214,7 @@ Nothing of yours is left behind: drafts live in the host process's memory, the f
 ## Troubleshooting
 
 **The panel says "No classic Outlook answered on this machine."**
-You are on the new Outlook for Windows (the WebView2 client), or Office is installed without Outlook. The new client has no COM surface — this is a property of the client, not a setting. Use a machine with classic Outlook, or set `MAILDESK_FIXTURE=1` to work on the interface with synthetic mail.
+You are on the new Outlook for Windows (the WebView2 client), or Office is installed without Outlook. The new client has no COM surface — this is a property of the client, not a setting. Use a machine with classic Outlook, or click **Preview with sample mail** in the panel (or set `MAILDESK_FIXTURE=1`) to work on the interface with synthetic mail.
 
 **A send is refused with `SEND BLOCKED: no human confirmation token`.**
 That is the third gate doing its job: something tried to send without going through the panel's or the card's confirmation. Send again from the panel or the card, where confirming is a click.

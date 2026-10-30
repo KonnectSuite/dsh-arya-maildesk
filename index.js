@@ -342,7 +342,7 @@ function needsConfirmation(kind, detail, editable = null) {
  * confirmation that mints OLK_CONFIRM.
  * ------------------------------------------------------------------------- */
 const PANEL_ACTIONS = new Set([
-  'account', 'list_folders', 'list_mail', 'read_mail', 'search_mail',
+  'account', 'list_folders', 'list_mail', 'read_mail', 'search_mail', 'thread',
   'mark_read', 'move_mail', 'delete_mail', 'open_mail',
 ])
 

@@ -1145,6 +1145,45 @@ function Invoke-OlkAction($ns, $action, $args_) {
       $out.read = $read
       $out.failed = $failed
     }
+    'thread' {
+      # The conversation this mail belongs to, as Outlook groups it: the item
+      # plus every root/child GetConversation() reports. Metadata only - the
+      # panel loads one body at a time, so a long thread stays cheap.
+      $it = $ns.GetItemFromID([string]$args_.entryId)
+      $out.conversationId = [string]$it.ConversationID
+      $out.topic = [string]$it.ConversationTopic
+      $limit = if ($args_.limit) { [int]$args_.limit } else { 60 }
+      $collected = @()
+      $seen = @{}
+      try {
+        $conv = $it.GetConversation()
+        $queue = New-Object System.Collections.Queue
+        foreach ($r in $conv.GetRootItems()) { $queue.Enqueue($r) }
+        while ($queue.Count -gt 0 -and $collected.Count -lt $limit) {
+          $m = $queue.Dequeue()
+          $id = ''
+          try { $id = [string]$m.EntryID } catch { $id = '' }
+          if ($id -eq '' -or $seen.ContainsKey($id)) { continue }
+          $seen[$id] = $true
+          $collected += $m
+          try { foreach ($c in $conv.GetChildren($m)) { $queue.Enqueue($c) } } catch { }
+        }
+      } catch { }
+      if ($collected.Count -eq 0) { $collected = @($it) }
+      $rows = @()
+      foreach ($m in ($collected | Sort-Object { $_.ReceivedTime })) {
+        $row = [ordered]@{}
+        try { $row.entryId = [string]$m.EntryID } catch { $row.entryId = '' }
+        try { $row.subject = [string]$m.Subject } catch { $row.subject = '' }
+        try { $row.sender = [string]$m.SenderName } catch { $row.sender = '' }
+        try { $row.senderSmtp = [string]$m.SenderEmailAddress } catch { $row.senderSmtp = '' }
+        try { $row.received = $m.ReceivedTime.ToString('yyyy-MM-dd HH:mm') } catch { $row.received = $null }
+        try { $row.unread = [bool]$m.UnRead } catch { $row.unread = $false }
+        $rows += $row
+      }
+      $out.messages = $rows
+      $out.count = $rows.Count
+    }
     default {
       throw "Unknown action: $action"
     }

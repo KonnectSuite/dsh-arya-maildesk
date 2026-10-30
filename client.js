@@ -274,6 +274,21 @@ window.__ModuleLoader__.load({
     '.md-accounts-head{font-size:11px;text-transform:uppercase;letter-spacing:.5px;opacity:.55}',
     '.md-acct{display:flex;align-items:center;gap:8px;font-size:12.5px;cursor:pointer;white-space:nowrap}',
     '.md-accounts-note{font-size:11px;opacity:.6;margin-top:4px;max-width:250px;line-height:1.35}',
+    '.md-thread{display:flex;flex-direction:column;gap:8px}',
+    '.md-thread-item{border:1px solid #e6e6e6;border-radius:10px;background:#fff;overflow:hidden}',
+    '.md-thread-item.current{border-color:#3b6ef5}',
+    '.md-thread-head{display:flex;align-items:center;gap:8px;padding:8px 10px;cursor:pointer;font-size:12.5px;background:#fafbfc}',
+    '.md-thread-item.current .md-thread-head{background:#f2f6ff}',
+    '.md-thread-dot{width:7px;height:7px;border-radius:50%;background:#c9ced6;flex:none}',
+    '.md-thread-dot.unread{background:#3b6ef5}',
+    '.md-thread-from{font-weight:600;flex:0 0 auto;max-width:45%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}',
+    '.md-thread-when{margin-left:auto;opacity:.65;font-size:11.5px}',
+    '.md-thread-more{font-size:11.5px;color:#3b6ef5}',
+    '.md-thread-body{padding:10px 12px;border-top:1px solid #eee}',
+    '.md-thread-snippet{padding:0 12px 10px;font-size:12px;opacity:.7;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}',
+    '.md-tabs{display:flex;gap:4px;padding:6px 8px 0;border-bottom:1px solid #ececec;flex:none}',
+    '.md-tab{font:inherit;font-size:12px;padding:4px 10px;border-radius:7px 7px 0 0;border:1px solid transparent;border-bottom:0;background:none;color:inherit;cursor:pointer;opacity:.7}',
+    '.md-tab.on{background:#fff;border-color:#e6e6e6;opacity:1;font-weight:600;margin-bottom:-1px}',
     '.md-ask-empty{opacity:.65;font-size:12px;line-height:1.45}',
     '.md-ask-err{color:#e5484d;font-size:12px}',
     '.md-ask-compose{display:flex;gap:8px;padding:8px 10px;align-items:flex-end}',
@@ -601,9 +616,16 @@ window.__ModuleLoader__.load({
       const [folderId, setFolderId] = React.useState(() => (typeof savedUi.folderId === 'string' && savedUi.folderId !== '' ? savedUi.folderId : null))
       const [page, setPage] = React.useState({ total: 0, offset: 0, returned: 0, folderPath: '', mails: [], unreadInFolder: -1 })
       const [listState, setListState] = React.useState('loading')
+      // Which of the two mail tabs is showing; see looksBulk().
+      const [box, setBox] = React.useState('focused')
       const [sel, setSel] = React.useState([])
       const [openId, setOpenId] = React.useState(null)
       const [openMail, setOpenMail] = React.useState(null)
+      // The conversation the open mail belongs to, when Outlook groups it with
+      // others. Bodies load one at a time, only when a message is expanded.
+      const [thread, setThread] = React.useState(null)
+      const [threadOpen, setThreadOpen] = React.useState(false)
+      const [threadBodies, setThreadBodies] = React.useState({})
       const [readState, setReadState] = React.useState('idle')
       const [error, setError] = React.useState('')
       const [busy, setBusy] = React.useState('')
@@ -845,10 +867,13 @@ window.__ModuleLoader__.load({
         setOpenId(entryId)
         setOpenMail(null)
         setReadState('loading')
+        setThread(null)
+        setThreadOpen(false)
         try {
           const result = await call('read_mail', { entryId, maxChars: 20000, format: 'html' })
           setOpenMail({ entryId, ...result })
           setReadState('ready')
+          void loadThread(entryId)
           // Opening a mail reads it, the way the desktop client does. The
           // toolbar can put it back, and nothing else changes state on read.
           const row = page.mails.find((m) => m.entryId === entryId)
@@ -865,6 +890,28 @@ window.__ModuleLoader__.load({
         } catch (error) {
           setReadState('error')
           setOpenMail({ entryId, error: error.message })
+        }
+      }
+
+      // Outlook's own grouping, through the bridge: two or more messages means
+      // the reader can offer the whole conversation instead of one turn of it.
+      const loadThread = async (entryId) => {
+        try {
+          const result = await call('thread', { entryId })
+          const messages = Array.isArray(result.messages) ? result.messages : []
+          setThread(messages.length > 1 ? { id: entryId, messages } : null)
+        } catch {
+          setThread(null)
+        }
+      }
+
+      const loadThreadBody = async (entryId) => {
+        if (threadBodies[entryId] !== undefined) return
+        try {
+          const result = await call('read_mail', { entryId, maxChars: 20000, format: 'html' })
+          setThreadBodies((prev) => ({ ...prev, [entryId]: result }))
+        } catch (error) {
+          setThreadBodies((prev) => ({ ...prev, [entryId]: { error: error.message } }))
         }
       }
 
@@ -1331,19 +1378,37 @@ window.__ModuleLoader__.load({
 
       const listMails = searchRows !== null ? searchRows : page.mails
 
+      // Focused / Other. Outlook keeps that classification server-side and does
+      // not expose it to COM (probed: no property, no filter), so this is
+      // AryaCode's rule and the tab title says so: automated senders are
+      // Other, people are Focused.
+      const looksBulk = (m) => {
+        const addr = String(m.senderSmtp || '').toLowerCase()
+        const name = String(m.sender || '').toLowerCase()
+        if (/^(no-?reply|do-?not-?reply|donotreply|notifications?|automated|mailer-daemon|postmaster|bounce[sd]?|newsletter|digest|alerts?)@/.test(addr)) return true
+        return /(notification|digest|automated|no[ -]?reply|do not reply|newsletter|mailer)/.test(name)
+      }
+      const focusedMails = listMails.filter((m) => !looksBulk(m))
+      const otherMails = listMails.filter((m) => looksBulk(m))
+      const boxMails = box === 'other' ? otherMails : focusedMails
+
       const rows = (() => {
         if (listState === 'loading' && searchRows === null) {
           return [0, 1, 2, 3, 4, 5, 6].map((i) => h('div', { key: i, className: 'md-skel' }, h('div'), h('div'), h('div')))
         }
         if (listState === 'error' && searchRows === null) return null
-        if (listMails.length === 0) {
+        if (boxMails.length === 0) {
           return h('div', { className: 'md-empty' },
-            h('div', { className: 'md-empty-h' }, searchRows !== null
-              ? 'Nothing matches "' + submittedSearch + '"'
-              : (unreadOnly ? 'No unread mail here' : 'This folder is empty')),
-            h('div', null, searchRows !== null ? 'Search covers this folder; try another word or clear the search.' : (page.folderPath || '')))
+            h('div', { className: 'md-empty-h' }, boxMails.length === 0 && listMails.length > 0
+              ? (box === 'other' ? 'Nothing in Other' : 'Nothing in Focused')
+              : searchRows !== null
+                ? 'Nothing matches "' + submittedSearch + '"'
+                : (unreadOnly ? 'No unread mail here' : 'This folder is empty')),
+            h('div', null, boxMails.length === 0 && listMails.length > 0
+              ? (box === 'other' ? 'Every message here looks like a person.' : 'The bulk mail is under Other.')
+              : searchRows !== null ? 'Search covers this folder; try another word or clear the search.' : (page.folderPath || '')))
         }
-        return listMails.map((m) => h('div', {
+        return boxMails.map((m) => h('div', {
           key: m.entryId,
           className: 'md-row' + (m.unread ? '' : ' read') + (sel.includes(m.entryId) ? ' sel' : '') + (m.entryId === openId ? ' open' : ''),
           role: 'option',
@@ -1378,6 +1443,18 @@ window.__ModuleLoader__.load({
         return h(React.Fragment, null,
           h('div', { className: 'md-read-head' },
             h('div', { className: 'md-read-subj' }, openMail.subject || '(no subject)'),
+            thread !== null
+              ? h('button', {
+                  className: 'md-btn' + (threadOpen ? ' primary' : ''),
+                  type: 'button',
+                  title: 'Show every message Outlook groups in this conversation',
+                  onClick: () => {
+                    const next = !threadOpen
+                    setThreadOpen(next)
+                    if (next && openId !== null) void loadThreadBody(openId)
+                  },
+                }, 'Conversation · ' + thread.messages.length)
+              : null,
             h('div', { className: 'md-meta' },
               h('div', null, h('b', null, 'From: '), openMail.sender || ''),
               h('div', null, h('b', null, 'To: '), openMail.to || ''),
@@ -1385,12 +1462,32 @@ window.__ModuleLoader__.load({
               h('div', null, h('b', null, 'Received: '), openMail.received || '')),
             attachments.length > 0 ? h('div', null, attachments.map((a, i) => h('span', { key: i, className: 'md-att' }, '📎 ' + a))) : null),
           h('div', { className: 'md-read-body' },
-            openMail.htmlTruncated === true
-              ? h('div', { className: 'md-html-note' }, 'The formatted body was truncated; text past the cut is missing.')
-              : null,
-            safeHtml !== null
-              ? h('div', { className: 'md-html', dangerouslySetInnerHTML: { __html: safeHtml } })
-              : h('div', { className: 'md-text' }, openMail.body || '(no text body)')))
+            threadOpen && thread !== null
+              ? h('div', { className: 'md-thread' }, thread.messages.map((m) => {
+                  const body = threadBodies[m.entryId]
+                  const expanded = body !== undefined
+                  return h('div', { key: m.entryId, className: 'md-thread-item' + (m.entryId === openId ? ' current' : '') },
+                    h('div', {
+                      className: 'md-thread-head',
+                      onClick: () => { if (!expanded) void loadThreadBody(m.entryId) },
+                    },
+                      h('span', { className: 'md-thread-dot' + (m.unread ? ' unread' : '') }),
+                      h('span', { className: 'md-thread-from' }, m.sender || '(unknown sender)'),
+                      h('span', { className: 'md-thread-when' }, shortWhen(m.received)),
+                      expanded ? null : h('span', { className: 'md-thread-more' }, 'Show')),
+                    expanded
+                      ? (body.error !== undefined
+                          ? h('div', { className: 'md-err' }, body.error)
+                          : h('div', { className: 'md-thread-body md-html', dangerouslySetInnerHTML: { __html: sanitizeEmailHtml(body.htmlBody || '') } }))
+                      : h('div', { className: 'md-thread-snippet' }, m.subject || ''))
+                }))
+              : h(React.Fragment, null,
+                  openMail.htmlTruncated === true
+                    ? h('div', { className: 'md-html-note' }, 'The formatted body was truncated; text past the cut is missing.')
+                    : null,
+                  safeHtml !== null
+                    ? h('div', { className: 'md-html', dangerouslySetInnerHTML: { __html: safeHtml } })
+                    : h('div', { className: 'md-text' }, openMail.body || '(no text body)'))))
       })()
 
       const composeView = (() => {
@@ -1672,6 +1769,20 @@ window.__ModuleLoader__.load({
         h('div', { className: 'md-body' },
           rail,
           h('div', { className: 'md-list' },
+            h('div', {
+              className: 'md-tabs',
+              title: "AryaCode's own split — Outlook keeps its Focused classification server-side and does not expose it to a client",
+            },
+              h('button', {
+                className: 'md-tab' + (box === 'focused' ? ' on' : ''),
+                type: 'button',
+                onClick: () => setBox('focused'),
+              }, 'Focused ' + focusedMails.length),
+              h('button', {
+                className: 'md-tab' + (box === 'other' ? ' on' : ''),
+                type: 'button',
+                onClick: () => setBox('other'),
+              }, 'Other ' + otherMails.length)),
             toolbar,
             h('div', { className: 'md-rows', ref: rowsRef, role: 'listbox', 'aria-label': 'Messages', 'aria-multiselectable': true }, rows),
             h('div', { className: 'md-pager' },

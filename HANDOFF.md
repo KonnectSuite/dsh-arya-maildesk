@@ -1,4 +1,4 @@
-# HANDOFF — dsh-arya-maildesk
+﻿# HANDOFF â€” dsh-arya-maildesk
 
 State of the published release, what was verified, what is still open, and how to continue on a machine
 that actually has classic Outlook. Keep this current when a version ships.
@@ -8,10 +8,10 @@ that actually has classic Outlook. Keep this current when a version ships.
 | | |
 |---|---|
 | Package | `@aryacode/dsh-arya-maildesk` |
-| Version | **1.0.4** — built and installed on the work laptop from a local tarball; **not on npm yet** |
+| Version | **1.0.4** â€” built and installed on the work laptop from a local tarball; **not on npm yet** |
 | Repository | `KonnectSuite/dsh-arya-maildesk` (public) |
 | Built from commit | working tree (1.0.4 is uncommitted as this is written) |
-| Last published | **1.0.3** — `https://registry.npmjs.org/@aryacode/dsh-arya-maildesk/-/dsh-arya-maildesk-1.0.3.tgz` |
+| Last published | **1.0.3** â€” `https://registry.npmjs.org/@aryacode/dsh-arya-maildesk/-/dsh-arya-maildesk-1.0.3.tgz` |
 | 1.0.3 sha256 | `1b1be6b2667410ce7bc3bf6440b50f9233dc18c87ff7b3562a466d01736b2f5d` (85,872 bytes) |
 | 1.0.3 npm shasum | `426103d47383a11976a81bc6b118bf97410c75da` |
 | GitHub release | `https://github.com/KonnectSuite/dsh-arya-maildesk/releases/tag/v1.0.3` |
@@ -26,8 +26,8 @@ removed in the npm UI.
 
 A Cordis plugin that gives AryaCode/DSH a real mail client: a three-pane panel, harness-owned reply
 drafts, a draft card inside the conversation, and a draft tab beside it. It drives the **local classic
-Outlook** over COM through one PowerShell dispatcher — resident while the plugin is loaded, with a one-shot
-fallback — no Graph app registration, no SMTP
+Outlook** over COM through one PowerShell dispatcher â€” resident while the plugin is loaded, with a one-shot
+fallback â€” no Graph app registration, no SMTP
 password, no admin consent.
 
 Two halves, one package:
@@ -44,7 +44,7 @@ Registration surface (all published APIs, no harness edits): `main` key `mail`, 
 `mail`, `sidebar.footer.action` id `newmail-badge`, `tool.call.toolview` key `maildesk_compose`,
 `sidebarRightTabs` type `maildesk-draft` + `sidebar.right.pane.tab` key `dsh-arya-maildesk:draft`.
 Routes: `GET /maildesk/api/health`, `GET|POST /maildesk/api/ask`, `GET|POST /maildesk/api/accounts`; `POST /maildesk/api/call`,
-`/maildesk/api/draft`, `/maildesk/api/send`, `/maildesk/api/fixture` — all same-origin, request bodies capped at 256 KB.
+`/maildesk/api/draft`, `/maildesk/api/send`, `/maildesk/api/fixture` â€” all same-origin, request bodies capped at 256 KB.
 
 `/maildesk/api/ask` is the in-panel agent: POST runs a real harness session (`ctx.get('sessionController')`) with
 the question plus the panel's context, GET reads that session's transcript back as `{role, text}`. Nothing in the
@@ -55,32 +55,32 @@ bundles), which is why the panel talks over routes.
 
 ## Where things stand
 
-Verified in **Dev AryaCode** (`%LOCALAPPDATA%\AryaCode-dev\home`, profile `web` — that tree is not on the work
-laptop, see *the dev lane* below), and — from 1.0.2 on — in the **installed** application on this PC: Mail row in
+Verified in **Dev AryaCode** (`%LOCALAPPDATA%\AryaCode-dev\home`, profile `web` â€” that tree is not on the work
+laptop, see *the dev lane* below), and â€” from 1.0.2 on â€” in the **installed** application on this PC: Mail row in
 the sidebar, 24 tools registered live.
 
-On **2026-10-30**, on this PC (the work laptop), classic Outlook was signed in and **rungs 1–5 plus 8 ran against a
-real mailbox**: `maildesk_account` → `kphung@frommconnect.com`; `maildesk_list_folders` → three stores (one Inbox
-1,573 items / 141 unread with 88 child folders; another 2,728 / 2,095); `list_mail` → 100 rows of 1,573; `read_mail`
-→ a real HTML body in the reading pane; the panel opening on real mail; `mark_read` → Inbox unread 141 → 140 → 141,
-each state read back from a fresh folder walk; and **Reply** → a prefilled draft (To, `RE:` subject, quoted
+On **2026-10-30**, on this PC (the work laptop), classic Outlook was signed in and **rungs 1â€“5 plus 8 ran against a
+real mailbox**: `maildesk_account` â†’ `kphung@frommconnect.com`; `maildesk_list_folders` â†’ three stores (one Inbox
+1,573 items / 141 unread with 88 child folders; another 2,728 / 2,095); `list_mail` â†’ 100 rows of 1,573; `read_mail`
+â†’ a real HTML body in the reading pane; the panel opening on real mail; `mark_read` â†’ Inbox unread 141 â†’ 140 â†’ 141,
+each state read back from a fresh folder walk; and **Reply** â†’ a prefilled draft (To, `RE:` subject, quoted
 original) discarded without writing an Outlook item. Move, delete and send are still unrun there.
 
 The same session added the thing the owner asked for: **the agent is in the Mail page**. `Ask` opens a drawer over
 the mailbox; the host runs a real harness session with the same `maildesk_*` tools and the same gates, and the
-panel renders the exchange. Verified live: "how many unread mails are in my Inbox?" → **141** (the tool answer, not
-a guess), and "name the newest unread mail" → sender, subject and date, with the conversation sat under the message
+panel renders the exchange. Verified live: "how many unread mails are in my Inbox?" â†’ **141** (the tool answer, not
+a guess), and "name the newest unread mail" â†’ sender, subject and date, with the conversation sat under the message
 list. The host route is `/maildesk/api/ask`; the client never talks to a model itself. Its session id is persisted
 so the conversation survives a reload, the transcript names the tools it calls, and the question carries the
 selected mail's `entryId`, so "reply to this one" resolves without a search.
 
-`Move to…` is a picker of its own now, because the lazy rail only knew the folders a person had expanded: it
+`Move toâ€¦` is a picker of its own now, because the lazy rail only knew the folders a person had expanded: it
 filters by path and can load the whole tree on demand (one slow walk, cached). The rail's shape and the open folder
 are mirrored to `localStorage`, so reopening Mail lands where the person left it.
 
 That session also found and fixed the reason the panel looked broken: the first paint waited for a whole-mailbox
 folder walk (545 folders, 16 s) before it asked for any mail, so "opening Mail" meant ~24 s of skeleton rows. The
-panel now paints the message list first and grows the folder rail lazily — **first mail in 3 s, rail in 1.5 s, one
+panel now paints the message list first and grows the folder rail lazily â€” **first mail in 3 s, rail in 1.5 s, one
 expand 2.5 s** on that same mailbox. 1.0.4 is that build; it is installed on this PC as a local tarball because the
 machine has no npm credentials, so nothing after 1.0.3 exists on the registry yet.
 
@@ -90,37 +90,37 @@ on the real mailbox, the rest have not:
 | Milestone | Evidence |
 |---|---|
 | Panel | folder rail, list, reading pane, paging, selection, mark read/move/delete round-trips through the real route (`docs/panel.png`) |
-| Safe reading pane | allowlisted HTML, `<script>`/`on*` dropped, remote image → `🖼 (remote image blocked)` chip, Proofpoint `urldefense` link resolved (`docs/panel-html.png`) |
+| Safe reading pane | allowlisted HTML, `<script>`/`on*` dropped, remote image â†’ `ðŸ–¼ (remote image blocked)` chip, Proofpoint `urldefense` link resolved (`docs/panel-html.png`) |
 | Composer | Reply all prefilled To/Cc/Subject (real SMTP addresses, Exchange senders resolved, self excluded), quoted original, two-step confirm, `Sent` toast, Drafts unchanged + Sent Items +1 (`docs/compose.png`, `docs/compose-confirm.png`) |
-| Draft card | keyed `tool.call.toolview` row on the host draft, `[Edit in panel] [Send…] [Discard]` (`docs/draft-card.png`) |
+| Draft card | keyed `tool.call.toolview` row on the host draft, `[Edit in panel] [Sendâ€¦] [Discard]` (`docs/draft-card.png`) |
 | Draft beside chat | real right-Sidebar tab, conversation still visible (`docs/panel-beside-chat.png`) |
 | No classic Outlook | the panel names the reason instead of reporting zero mail (`docs/panel-new-outlook.png`) |
 | Sample mailbox | `SAMPLE MAIL` pill, **Preview with sample mail** / **Back to live mail**, whole mailbox on a PC with no Outlook (`docs/panel-sample-mail.png`) |
 
-Offline — **150 assertions** in all:
+Offline â€” **150 assertions** in all:
 
-- `npm test` — bundle guard (**15** checks) + **59** PowerShell assertions: 14 in
+- `npm test` â€” bundle guard (**15** checks) + **59** PowerShell assertions: 14 in
   `test/folder-resolution.test.ps1`, 45 in `test/mail-actions.test.ps1` against a fake COM object model.
-- `node test/panel-api.test.mjs` — **29** assertions driving the real host routes with fake `req`/`res`.
-- `node test/ask-route.test.mjs` — **19** assertions with a stub session controller: one session created and
+- `node test/panel-api.test.mjs` â€” **29** assertions driving the real host routes with fake `req`/`res`.
+- `node test/ask-route.test.mjs` â€” **19** assertions with a stub session controller: one session created and
   reused, the panel context travels with the question, tool calls are named, transport edges stay closed.
-- `node test/drafts-persist.test.mjs` — **11** assertions: a draft is written to disk on save, a second module
+- `node test/drafts-persist.test.mjs` â€” **11** assertions: a draft is written to disk on save, a second module
   instance (a restart, in miniature) lists it with its recipients and body, and a discard clears the file.
-- `node test/sample-mail.test.mjs` — **17** assertions: no fixture → the live provider fails loudly (no
-  invented empty mailbox) → toggle on → folders, rows, read → toggle off → fails again, plus route guards.
-- `node --check index.js` / `client.js` — the only build gate; there is no bundler and no TypeScript.
-- `node test/resident-live.mjs` — **live only** (needs COM): starts the resident bridge through the real host
-  routes and prints cold vs warm timings. Not part of `npm test`; it is the measurement behind the 10× claim.
+- `node test/sample-mail.test.mjs` â€” **17** assertions: no fixture â†’ the live provider fails loudly (no
+  invented empty mailbox) â†’ toggle on â†’ folders, rows, read â†’ toggle off â†’ fails again, plus route guards.
+- `node --check index.js` / `client.js` â€” the only build gate; there is no bundler and no TypeScript.
+- `node test/resident-live.mjs` â€” **live only** (needs COM): starts the resident bridge through the real host
+  routes and prints cold vs warm timings. Not part of `npm test`; it is the measurement behind the 10Ã— claim.
 
 The resident bridge is killed on plugin dispose (`ctx.effect`), so a reload never leaves a PowerShell holding COM.
 If it dies, the call that noticed reports the error and every later call uses the one-shot path.
 
-`npm test` also needs permission to spawn `powershell.exe`. Under a restricted harness — this session's file
-sandbox, for one — `test/sample-mail.test.mjs` stops at the first live-provider check with `spawn EPERM`: the route
+`npm test` also needs permission to spawn `powershell.exe`. Under a restricted harness â€” this session's file
+sandbox, for one â€” `test/sample-mail.test.mjs` stops at the first live-provider check with `spawn EPERM`: the route
 is honest about the failure, but the text is the raw spawn error, which that assertion's regex does not accept. Run
 the suites from a normal shell before treating a red run as a regression.
 
-**Still not verified: nothing has been written or sent from a real mailbox.** Rungs 1–5 pass on the work laptop —
+**Still not verified: nothing has been written or sent from a real mailbox.** Rungs 1â€“5 pass on the work laptop â€”
 COM activation, the folder walk, paging, body retrieval and the panel itself. Everything that *writes* (move,
 delete, mark read), the composer and send have only ever run on synthetic mail from `MAILDESK_FIXTURE=1`, and the
 send gate has never seen a real recipient. Closing that is the rest of the ladder.
@@ -134,7 +134,7 @@ You are picking this up cold. Read this section top to bottom before touching an
 - Classic Win32 Outlook installed, one work account signed in. Outlook may be closed; COM starts it.
 - AryaCode installed, host version satisfying `^0.2.1-rc.3 || >=0.2.2-alpha.2`. Check before blaming the
   plugin: an older host refuses to mount and the market marks the install failed.
-- Nothing else. **No IT ticket, no app registration, no Graph consent** — that is the whole point of the
+- Nothing else. **No IT ticket, no app registration, no Graph consent** â€” that is the whole point of the
   COM path.
 
 ### 2. Install
@@ -143,7 +143,7 @@ The market card installs a version into a pnpm profile, and pnpm holds **any ver
 (`minimumReleaseAge`, default 1440 minutes). For 1.0.3 that hold ends `2026-10-31T04:10Z` (**00:10 local, EDT, on
 Oct 31**). 1.0.3 is installed on this PC, so the order below is the one that actually worked:
 
-1. **Publish, then refresh the catalogue** — `npm publish --access public`, then the market scripts in the
+1. **Publish, then refresh the catalogue** â€” `npm publish --access public`, then the market scripts in the
    *Release procedure* below. The catalogue is CDN-cached for up to 5 minutes, so a just-pushed version can take a
    moment to appear.
 2. **Install from the market.** It is refused on the age gate: red `!`, `added 0`, and a `Done in Ns` tail that is
@@ -155,57 +155,57 @@ Oct 31**). 1.0.3 is installed on this PC, so the order below is the one that act
       - '@aryacode/dsh-arya-maildesk@1.0.3'     # REPLACE any older @1.0.x line, do not append
     ```
 
-    pnpm honours only the **first** rule per package name, so a leftover `@1.0.0` line shadows the new one — and
+    pnpm honours only the **first** rule per package name, so a leftover `@1.0.0` line shadows the new one â€” and
     each future publish needs its own line in place of the last.
 4. **Install again.** The failed row is not a successful install: retry it, or remove it and add it back. On success
    the market copies the tarball to
    `<profile>\.dsh-market\releases\aryacode-dsh-arya-maildesk-<version>-<sha256>.tgz` and rewrites the profile
-   dependency to `file:` that path — which is why the digest in the table above is also the file you can hash.
+   dependency to `file:` that path â€” which is why the digest in the table above is also the file you can hash.
 5. **Restart AryaCode.** Bundles mount at startup.
 
 If the market is unavailable, the equivalent without the hold: copy the tarball over and
 `pnpm add file:<path>.tgz` in the profile with the app's own pnpm
-(`…\AryaCode\resources\runtime\primary-runtime\dependencies\pnpm\bin\pnpm.cjs`), then add
+(`â€¦\AryaCode\resources\runtime\primary-runtime\dependencies\pnpm\bin\pnpm.cjs`), then add
 `@aryacode/dsh-arya-maildesk` to `dsh.profile.bundles` in that profile's `package.json`.
 
-### 3. Activation ladder — run these in order, one at a time
+### 3. Activation ladder â€” run these in order, one at a time
 
 Each rung isolates one layer; stop at the first failure and read the signature table.
 
-1. **`maildesk_account`** — must return your display name and SMTP address. This is the gate: it proves
+1. **`maildesk_account`** â€” must return your display name and SMTP address. This is the gate: it proves
    COM activation, the Outlook profile and the store. Everything below depends on it.
-2. **`maildesk_list_folders`** — folder tree, ids, item counts. Proves the folder walk and the count reads.
-3. **`maildesk_list_mail`** with `limit: 5` — proves `Restrict`/`Sort` against the real store.
-4. **`maildesk_read_mail`** on one id, `format: 'html'` — proves body retrieval and the sanitizer against a
+2. **`maildesk_list_folders`** â€” folder tree, ids, item counts. Proves the folder walk and the count reads.
+3. **`maildesk_list_mail`** with `limit: 5` â€” proves `Restrict`/`Sort` against the real store.
+4. **`maildesk_read_mail`** on one id, `format: 'html'` â€” proves body retrieval and the sanitizer against a
    real corporate mail (Proofpoint links, blocked images).
-5. **Panel check** — Mail row, rail, list, reading pane. Then select a row and use *Mark unread → Refresh*:
-   proves a write round-trip through the route. If the header reads `Classic Outlook · COM` while the list is empty
-   and the footer says `unread count unavailable`, the bridge returned `unreadInFolder: -1` — that is the ladder
+5. **Panel check** â€” Mail row, rail, list, reading pane. Then select a row and use *Mark unread â†’ Refresh*:
+   proves a write round-trip through the route. If the header reads `Classic Outlook Â· COM` while the list is empty
+   and the footer says `unread count unavailable`, the bridge returned `unreadInFolder: -1` â€” that is the ladder
    diverging, not a slow load.
-6. **`maildesk_move_mail`** one mail to another folder — note the entryId changes; re-read the folder.
-7. **`maildesk_delete_mail`** on one mail with the right `expected` count — soft delete to Deleted Items.
+6. **`maildesk_move_mail`** one mail to another folder â€” note the entryId changes; re-read the folder.
+7. **`maildesk_delete_mail`** on one mail with the right `expected` count â€” soft delete to Deleted Items.
    The `expected` gate must refuse a wrong count; try it once deliberately.
-8. **`maildesk_compose`** with `mode: 'reply'`, no send — the card must appear in chat and
+8. **`maildesk_compose`** with `mode: 'reply'`, no send â€” the card must appear in chat and
    `[Edit in panel]` must open the same draft, not a second one.
-9. **Send** — the confirm card must list the exact content; the hash binds it. After sending: Drafts
+9. **Send** â€” the confirm card must list the exact content; the hash binds it. After sending: Drafts
    unchanged, Sent Items +1.
 
 ### 4. Failure signatures
 
 | Signature | Meaning |
 |---|---|
-| `80040154 Class not registered` | no COM Outlook on this machine — new Outlook is the handler, or Office has no Outlook |
+| `80040154 Class not registered` | no COM Outlook on this machine â€” new Outlook is the handler, or Office has no Outlook |
 | `classic desktop Outlook not found, but the new Outlook for Windows is installed` | our own message: the WebView2 client is present, it has no COM surface |
-| `ERR_MODULE_NOT_FOUND: Cannot find package '<name>'` | the bundle patch names a package that does not exist — this was 1.0.0's bug; check `cordis.patch.yml`'s `name:` equals `package.json`'s `name`, scope included |
+| `ERR_MODULE_NOT_FOUND: Cannot find package '<name>'` | the bundle patch names a package that does not exist â€” this was 1.0.0's bug; check `cordis.patch.yml`'s `name:` equals `package.json`'s `name`, scope included |
 | `SEND BLOCKED: no human confirmation token` | the bridge refused a send because the host did not mint `OLK_CONFIRM`; normal for any direct bridge call |
 | "a program is trying to send email on your behalf" | Outlook's own programmatic-access guard; drafts still save, sending may prompt once |
-| `spawn EPERM` / powershell spawn denied | EDR/AppLocker — or a harness sandbox — blocks `powershell.exe`; that is the blocker, not the plugin. The text is raw, not one of our sentences |
-| panel shows "No classic Outlook answered", all actions disabled | the bridge is alive and reported the reason — read its sentence, it is accurate |
+| `spawn EPERM` / powershell spawn denied | EDR/AppLocker â€” or a harness sandbox â€” blocks `powershell.exe`; that is the blocker, not the plugin. The text is raw, not one of our sentences |
+| panel shows "No classic Outlook answered", all actions disabled | the bridge is alive and reported the reason â€” read its sentence, it is accurate |
 
 ### 5. What to report back
 
 For each rung: pass/fail and, on failure, the verbatim error. If rung 1 passes, the backend is real and the
-rest is polish. If it fails, the string above identifies the layer. Record which rung first diverged — that
+rest is polish. If it fails, the string above identifies the layer. Record which rung first diverged â€” that
 is the whole value of the session.
 
 ### 6. Working from this laptop (GitHub CLI is available here now)
@@ -223,15 +223,15 @@ git -c http.sslBackend=openssl push origin main    # schannel fails on this netw
 Rules that still apply there:
 
 - **Always pass `--repo KonnectSuite/dsh-arya-maildesk` to `gh release`.** `gh` resolves the repository from the
-  remotes, and this clone has carried an `upstream` remote pointing at the original project at times — without
+  remotes, and this clone has carried an `upstream` remote pointing at the original project at times â€” without
   `--repo` it once tried to push a tag to `UnknowCao/dsh-outlook` and failed. The current clone has only `origin`;
   keep the flag anyway, so a re-added upstream cannot bite.
 - Never republish a version; bump it. `npm deprecate` retires a bad one, `npm unpublish` is refused for
   tokens that skip 2FA.
 - `git push --tags` also carries the fork's inherited tags; push `v<version>` explicitly and delete strays
   with `git push origin --delete <tag>`.
-- Publish order is fixed: `npm publish --access public` → `dsh-market` `--pull` → `--release --npm <v>` →
-  `--push` → verify the **live raw URL** with a cache-buster, not the local file.
+- Publish order is fixed: `npm publish --access public` â†’ `dsh-market` `--pull` â†’ `--release --npm <v>` â†’
+  `--push` â†’ verify the **live raw URL** with a cache-buster, not the local file.
 
 ## Two bugs the tests could not see (why the guard exists)
 
@@ -242,7 +242,7 @@ outlook (dsh-arya-maildesk): failed to import: Error [ERR_MODULE_NOT_FOUND]:
 Cannot find package 'dsh-arya-maildesk' imported from ~\.aryacode\profiles\desktop\
 ```
 
-`cordis.patch.yml` named the package **unscoped** — a leftover of the rename to
+`cordis.patch.yml` named the package **unscoped** â€” a leftover of the rename to
 `@aryacode/dsh-arya-maildesk`. The loader resolves that string with `import()`, so a correct, digest
 verified tarball could sit in `node_modules` and still not mount. Development never caught it because the
 dev profile links this repository under the *unscoped* name, so the stale string resolved by luck.
@@ -253,7 +253,7 @@ stay scoped, every entry point must exist **and** be in `files`, and `dsh.engine
 **Lesson:** tests that exercise code do not prove a package mounts. Anything the loader reads by name needs
 its own assertion.
 
-### 1.0.1 — same bug, one layer down
+### 1.0.1 â€” same bug, one layer down
 
 1.0.1 fixed the patch row and the installed app still refused to boot:
 
@@ -263,7 +263,7 @@ web boot: 1 entry did not activate
 ```
 
 The console held the real line: `client-modules: could not load "@aryacode/dsh-arya-maildesk"`. `client.js`
-called `window.__ModuleLoader__.load({ id: 'dsh-arya-maildesk' })` — **unscoped** — while the boot module
+called `window.__ModuleLoader__.load({ id: 'dsh-arya-maildesk' })` â€” **unscoped** â€” while the boot module
 table keys every client bundle by *package name*. The host half was fine (24 tools registered, the bridge
 answered); the browser half registered itself where nothing looks for it. Development hid it exactly the
 same way: the dev profile links the repo under the unscoped name.
@@ -272,7 +272,7 @@ same way: the dev profile links the repo under the unscoped name.
 `name`. Replaying 1.0.1's `client.js` through the guard fails on that line, which is the point.
 
 **Reproduce a bug like this by installing the packed tarball.** The dev lane's `file:` link resolves stale
-names by luck. The fatal signal is `entry did not activate` — never `Done in 4.1s`.
+names by luck. The fatal signal is `entry did not activate` â€” never `Done in 4.1s`.
 
 Verified after the fix (this PC, installed AryaCode, desktop profile): the sidebar shows **Mail**, the 24
 `maildesk_*` tools are registered, and `maildesk_account` answers from the signed-in profile instead of failing
@@ -282,7 +282,7 @@ silently.
 ## Known gaps
 
 1. **Send is verified once, by the owner.** On 2026-10-30 11:46 a reply sent from the panel reached Sent Items and
-   the Inbox, which exercises composer → hash → confirmation → bridge token → Outlook → Exchange. It is one
+   the Inbox, which exercises composer â†’ hash â†’ confirmation â†’ bridge token â†’ Outlook â†’ Exchange. It is one
    message, not a soak test: attachments, non-Exchange recipients and the programmatic-send prompt under other
    Outlook security settings have not been tried.
 2. **User-visible strings are English only.** No locale layer, no `locale/*.json`. Deliberate deviation from
@@ -296,7 +296,7 @@ silently.
    else must be addressed by entryId from `maildesk_list_folders`.
 7. **Drafts persist to `%TEMP%\dsh-arya-maildesk-drafts.json`** and are read back at mount; a file that cannot be
    written (or must not be, in a test) falls back to memory only. `MAILDESK_DRAFTS_FILE` overrides the path.
-8. **`move_mail` changes entryIds** — re-read after a move.
+8. **`move_mail` changes entryIds** â€” re-read after a move.
 9. **Search covers one folder at a time.** The panel's search box asks the bridge for the *current* folder, subject
    first and sender second; there is no whole-mailbox or free-text search, and `maildesk_search_mail` still does
    the richer queries (dates, recipient, other folders) from chat.
@@ -309,16 +309,16 @@ silently.
 
 ## Release procedure
 
-1. `node scripts/set-version.mjs <x.y.z>` (never `JSON.stringify` the manifest — it is 4-space formatted).
+1. `node scripts/set-version.mjs <x.y.z>` (never `JSON.stringify` the manifest â€” it is 4-space formatted).
 2. `npm test` and `node test/panel-api.test.mjs` green; `node --check` both halves.
 3. `npm publish --access public`. The registry holds new packages under "being processed" for a few minutes;
-   confirm `npm view … dist-tags.latest`.
+   confirm `npm view â€¦ dist-tags.latest`.
 4. `git tag vX.Y.Z && git push origin main vX.Y.Z`, then
-   `gh release create vX.Y.Z --repo KonnectSuite/dsh-arya-maildesk …` — **pass `--repo`**, because `gh`
+   `gh release create vX.Y.Z --repo KonnectSuite/dsh-arya-maildesk â€¦` â€” **pass `--repo`**, because `gh`
    resolves the repository from the remotes and this clone has carried an `upstream` at times.
 5. Catalogue, from `KonnectSuite/dsh-market`: `node scripts/publish-arya-catalog.mjs --pull`, then
    `node scripts/publish-arya-release.mjs --npm <x.y.z> --source KonnectSuite/dsh-arya-maildesk
-   --name '@aryacode/dsh-arya-maildesk' --description … --description-zh …`, then `--push`. Verify the live
+   --name '@aryacode/dsh-arya-maildesk' --description â€¦ --description-zh â€¦`, then `--push`. Verify the live
    raw URL, not the local file.
 6. Retire a bad version with `npm deprecate`, never unpublish.
 
@@ -326,12 +326,12 @@ silently.
 
 - **Never call it "works" until it has read real mail.** Say "synthetic" when it is the fixture. This rule
   exists because the word was used loosely once and cost a session.
-- **Chinese never crosses `pwsh -Command`** — it arrives mojibake'd. Stage text in a file, read it with
+- **Chinese never crosses `pwsh -Command`** â€” it arrives mojibake'd. Stage text in a file, read it with
   `-Encoding UTF8`, pass variables; or write files with the `write`/`edit` tools.
 - **The bundled client face is hand-written** (`client.js`, no build step). `node --check` is the only gate.
-- **`minimumReleaseAgeExclude` honours only the first rule per package name** — replace the line, do not append.
+- **`minimumReleaseAgeExclude` honours only the first rule per package name** â€” replace the line, do not append.
 - **Don't edit installed app bundles.** Releases go out through npm and the market.
-- **The dev lane**: dev profile `web`, repo linked by dependency `dsh-arya-maildesk: file:…` plus a
+- **The dev lane**: dev profile `web`, repo linked by dependency `dsh-arya-maildesk: file:â€¦` plus a
   `mklink /J` junction; server with
   `node --import tsx/esm apps/cli/src/bin.ts --profile web --port 58231 --host 127.0.0.1 --no-open`
   (a new `?token=` on every restart); `MAILDESK_FIXTURE=1` for synthetic mail, `OLK_WATCH=0` to silence the
@@ -348,39 +348,30 @@ live mail, unsent drafts survive a restart, replies are addressed through Exchan
 the Mail page** with one-click asks that carry the selected `entryId`.
 
 Evidence: **150 offline assertions**, plus the live ladder through rung 9, plus the send *gates* run for real
-(no hash → `needs-confirmation` with preview and content hash; wrong hash → refused, draft intact; no bridge token
-→ `SEND BLOCKED`). `node test/resident-live.mjs` prints the bridge timings.
+(no hash â†’ `needs-confirmation` with preview and content hash; wrong hash â†’ refused, draft intact; no bridge token
+â†’ `SEND BLOCKED`). `node test/resident-live.mjs` prints the bridge timings.
 
 **Rung 9 passed on 2026-10-30 11:46**, sent by the owner from the panel: a reply to *RE: Asset Center* appeared in
-Sent Items and arrived back in the Inbox at the same minute. That exercise covers the whole outbound chain —
-composer, content hash, confirmation, bridge token, Outlook send and Exchange delivery — and it is the first mail
+Sent Items and arrived back in the Inbox at the same minute. That exercise covers the whole outbound chain â€”
+composer, content hash, confirmation, bridge token, Outlook send and Exchange delivery â€” and it is the first mail
 this project has ever sent.
 
 Open:
 
-- **1.0.4 is built and installed here but not on npm** — this machine has no npm credential (`~/.npmrc`,
+- **1.0.4 is built and installed here but not on npm** â€” this machine has no npm credential (`~/.npmrc`,
   `%APPDATA%\npm`, `NPM_TOKEN` and the KonnectSuite tree are all empty; `gh` is authenticated, npm is not).
   Publishing is now the only step left for other users to get this build.
 
 ## Next, in priority order
 
-1. **Rungs 6–9** (move, delete, compose, send) on the work laptop; record where it diverges. Reads already pass.
-   **(blocks the release claim, not the UI work)**
-2. **Finish the panel agent** (it exists and works): persist its session id across restarts, stream instead of the
-   1.5 s poll, show the tool calls it makes, and let it act on the selected mail without being told the entryId.
-3. **Outlook-shaped organisation** (owner's next ask). Probed 2026-10-30 on this profile:
-   - **Threads are available.** `MailItem.ConversationID` / `ConversationTopic` are readable and
-     `GetConversation()` returns roots and children — a real "RE: Schedule AN-X4" thread came back as two
-     ordered messages. A `thread { entryId }` bridge action plus a conversation view in the reading pane is
-     straightforward.
-   - **Focused/Other is not.** The classification lives server-side; the candidate MAPI properties
-     (`0x40820003`, `0x4082000B`, `0x40820048`, `0x0E1F0003`) are all unreadable through `PropertyAccessor`,
-     and a `Restrict` on the conversation id returned nothing. Either skip the tab or define our own rule and
-     label it as ours — do not fake Outlook's.
-4. Panel search box over `maildesk_search_mail` (small, high daily-use value).
-4. Persistent drafts (write the draft store to `storage`), so a restart stops eating replies.
-5. Publish 1.0.4 (npm credentials needed on this machine — none are present), then catalogue + GitHub release.
-6. A morning-brief prompt/tool built on `list_mail` + `read_mail` — daily value with no new UI.
-7. 1.1.0: localisation layer, then the localisation gate can be honoured.
-8. Optional, decision pending: a `graph` provider for the new Outlook, which needs IT consent on a
-   corporate tenant and no consent at all on personal accounts.
+1. **Publish 1.0.4** (npm credentials are needed on this machine — none are present), then the catalogue entry and
+   the GitHub release. The build is otherwise ready: tests green, tarball installs, docs current.
+2. **Stream the panel agent** instead of the 1.5 s poll and give it a "new conversation" control. Everything else
+   about it is done: its session persists, the transcript names each tool, and the selected mail travels as an
+   entryId.
+3. **The remaining Outlook-isms**: sort by conversation, unread counts per thread, "show only this conversation",
+   and a configurable reading-pane position.
+4. A morning-brief prompt/tool built on `list_mail` + `read_mail` — daily value with no new UI.
+5. 1.1.0: localisation layer, then the localisation gate can be honoured.
+6. Optional, decision pending: a `graph` provider for the new Outlook, which needs IT consent on a corporate
+   tenant and no consent at all on personal accounts.

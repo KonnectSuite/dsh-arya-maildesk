@@ -26,7 +26,8 @@ removed in the npm UI.
 
 A Cordis plugin that gives AryaCode/DSH a real mail client: a three-pane panel, harness-owned reply
 drafts, a draft card inside the conversation, and a draft tab beside it. It drives the **local classic
-Outlook** over COM through one resident-free PowerShell dispatcher — no Graph app registration, no SMTP
+Outlook** over COM through one PowerShell dispatcher — resident while the plugin is loaded, with a one-shot
+fallback — no Graph app registration, no SMTP
 password, no admin consent.
 
 Two halves, one package:
@@ -34,7 +35,7 @@ Two halves, one package:
 | File | Half | What it does |
 |---|---|---|
 | `index.js` | host | 24 `maildesk_*` tools, the COM bridge spawn, the draft store, the panel + compose HTTP routes, the fixture provider |
-| `lib/olk.ps1` | bridge | one-shot dispatcher: `OLK_ACTION` + one JSON in, one JSON out; 25 actions over COM |
+| `lib/olk.ps1` | bridge | dispatcher: resident by default (`OLK_RESIDENT=1`, one JSON request per line in and out) or one-shot (`OLK_ACTION` + one JSON on stdin); 25 actions over COM |
 | `lib/watch.ps1` | bridge | `NewMailEx` listener for the badge (self-healing, 30 s) |
 | `client.js` | browser | one `window.__ModuleLoader__` bundle: badge, panel, composer, chat card, Sidebar tab |
 | `cordis.patch.yml` | bundle | the host-plane row that mounts `index.js` |
@@ -108,6 +109,11 @@ Offline — **150 assertions** in all:
 - `node test/sample-mail.test.mjs` — **17** assertions: no fixture → the live provider fails loudly (no
   invented empty mailbox) → toggle on → folders, rows, read → toggle off → fails again, plus route guards.
 - `node --check index.js` / `client.js` — the only build gate; there is no bundler and no TypeScript.
+- `node test/resident-live.mjs` — **live only** (needs COM): starts the resident bridge through the real host
+  routes and prints cold vs warm timings. Not part of `npm test`; it is the measurement behind the 10× claim.
+
+The resident bridge is killed on plugin dispose (`ctx.effect`), so a reload never leaves a PowerShell holding COM.
+If it dies, the call that noticed reports the error and every later call uses the one-shot path.
 
 `npm test` also needs permission to spawn `powershell.exe`. Under a restricted harness — this session's file
 sandbox, for one — `test/sample-mail.test.mjs` stops at the first live-provider check with `spawn EPERM`: the route

@@ -128,16 +128,7 @@ function Resolve-Folder($ns, $spec) {
   return $f
 }
 
-try {
-  $args_ = @{}
-  # Read stdin as UTF-8 explicitly: the Node caller writes UTF-8 bytes, but
-  # [Console]::In on PS 5.1 decodes with the OEM/ANSI codepage (GBK here),
-  # turning every non-ASCII argument into mojibake.
-  $stdinReader = New-Object System.IO.StreamReader([System.Console]::OpenStandardInput(), (New-Object System.Text.UTF8Encoding($false)))
-  $raw = $stdinReader.ReadToEnd()
-  if ($raw) { $args_ = $raw | ConvertFrom-Json }
-  $action = $env:OLK_ACTION
-
+function Connect-Outlook {
   try {
     $outlook = [Runtime.InteropServices.Marshal]::GetActiveObject('Outlook.Application')
   } catch {
@@ -162,7 +153,12 @@ try {
     $outlook = New-Object -ComObject Outlook.Application
   }
   $ns = $outlook.GetNamespace('MAPI')
+  return $ns
+}
 
+function Invoke-OlkAction($ns, $action, $args_) {
+  $out = [ordered]@{}
+  try {
   switch ($action) {
 
     'account' {
@@ -1154,10 +1150,52 @@ try {
     }
   }
 
-  $out.status = 'ok'
-} catch {
-  $out.status = 'error'
-  $out.error = $_.Exception.Message
+    $out.status = 'ok'
+  } catch {
+    $out.status = 'error'
+    $out.error = $_.Exception.Message
+  }
+  return $out
 }
 
-Out-Json $out
+function Read-StdinAll {
+  $reader = New-Object System.IO.StreamReader([System.Console]::OpenStandardInput(), (New-Object System.Text.UTF8Encoding($false)))
+  return $reader.ReadToEnd()
+}
+
+if ($env:OLK_RESIDENT -eq '1') {
+  # Resident mode: connect once, then one JSON request per line on stdin and one
+  # JSON answer per line on stdout. The host keeps this process alive, so a folder
+  # click costs COM work instead of PowerShell startup.
+  try { $ns = Connect-Outlook } catch {
+    [Console]::Out.WriteLine(([ordered]@{ status = 'error'; error = $_.Exception.Message } | ConvertTo-Json -Compress))
+    [Console]::Out.Flush()
+    exit 1
+  }
+  $stdin = New-Object System.IO.StreamReader([System.Console]::OpenStandardInput(), (New-Object System.Text.UTF8Encoding($false)))
+  $stdout = New-Object System.IO.StreamWriter([System.Console]::OpenStandardOutput(), (New-Object System.Text.UTF8Encoding($false)))
+  $stdout.AutoFlush = $true
+  while ($true) {
+    $line = $stdin.ReadLine()
+    if ($null -eq $line) { break }
+    if ($line.Trim() -eq '') { continue }
+    $req = $null
+    try { $req = $line | ConvertFrom-Json } catch { $req = $null }
+    if ($null -eq $req) { $stdout.WriteLine('{"status":"error","error":"request is not JSON"}'); continue }
+    $res = Invoke-OlkAction $ns ([string]$req.action) ($req.args)
+    $stdout.WriteLine(($res | ConvertTo-Json -Depth 6 -Compress))
+  }
+  exit 0
+}
+
+# One-shot mode: OLK_ACTION + one JSON object on stdin, one JSON object out.
+$action = $env:OLK_ACTION
+$args_ = @{}
+$raw = Read-StdinAll
+if ($raw) { $args_ = $raw | ConvertFrom-Json }
+try {
+  $ns = Connect-Outlook
+  Out-Json (Invoke-OlkAction $ns $action $args_)
+} catch {
+  Out-Json ([ordered]@{ status = 'error'; error = $_.Exception.Message })
+}

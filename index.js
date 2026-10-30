@@ -130,13 +130,114 @@ function olkOne(action, args = {}, opts = {}) {
   })
 }
 
+// ---- resident dispatcher --------------------------------------------------
+// A fresh PowerShell per call costs ~1.5 s of the ~2 s a folder click takes.
+// One long-lived process pays that once and then answers in 0.2-0.5 s. It is a
+// strict accelerator: any failure is reported and the next call uses the
+// one-shot path, so the mailbox never depends on it being healthy. A confirmed
+// send always spawns a fresh process, because its token travels in the
+// environment and a send is not a thing to retry through a warm pipe.
+const RESIDENT_TIMEOUT_MS = 90000
+let resident = null
+// Tests (and any caller that wants a process to be able to exit) opt out: a
+// live child with piped stdio keeps Node's event loop alive even when the
+// mailbox work is done.
+let residentDisabled = process.env.MAILDESK_NO_RESIDENT === '1'
+
+function stopResident() {
+  const session = resident
+  resident = null
+  if (session !== null) {
+    try { session.child.kill() } catch { /* already gone */ }
+  }
+}
+
+function startResident() {
+  const child = spawn('powershell', [
+    '-NoProfile', '-Command',
+    `$env:OLK_RESIDENT='1'; Invoke-Expression (Get-Content -Raw -Encoding UTF8 '${BRIDGE.replace(/'/g, "''")}')`,
+  ], {
+    env: { ...process.env, OLK_ACTION: '', OLK_CONFIRM: '' },
+    windowsHide: true,
+    stdio: ['pipe', 'pipe', 'pipe'],
+  })
+  const session = { child, buffer: '', pending: [], dead: false }
+  const settleAll = (message) => {
+    session.dead = true
+    for (const entry of session.pending.splice(0)) {
+      clearTimeout(entry.timer)
+      entry.resolve({ status: 'error', error: message })
+    }
+    if (resident === session) resident = null
+  }
+  child.on('error', (error) => settleAll('resident bridge could not start: ' + error.message))
+  child.on('close', (code) => settleAll('resident bridge exited (code ' + code + ')'))
+  child.stdin.on('error', () => { /* close handler reports */ })
+  child.stderr.on('data', (chunk) => { wlog('resident stderr: ' + String(chunk).slice(0, 300)) })
+  child.stdout.on('data', (chunk) => {
+    session.buffer += chunk
+    let index = session.buffer.indexOf('\n')
+    while (index >= 0) {
+      const line = session.buffer.slice(0, index).trim()
+      session.buffer = session.buffer.slice(index + 1)
+      index = session.buffer.indexOf('\n')
+      if (line === '') continue
+      const entry = session.pending.shift()
+      if (entry === undefined) continue
+      clearTimeout(entry.timer)
+      try {
+        entry.resolve(JSON.parse(line))
+      } catch {
+        entry.resolve({ status: 'error', error: 'resident bridge sent a line that is not JSON' })
+      }
+    }
+  })
+  resident = session
+  // Do not keep the host process alive on the worker's account; the plugin
+  // disposes it explicitly, and a parent that is exiting should be able to.
+  try { child.unref() } catch { /* not fatal */ }
+  return session
+}
+
+function residentCall(action, args) {
+  return new Promise((resolve) => {
+    let session = resident
+    if (session === null || session.dead) {
+      try {
+        session = startResident()
+      } catch (error) {
+        residentDisabled = true
+        resolve({ status: 'error', error: 'resident bridge could not start: ' + error.message })
+        return
+      }
+    }
+    const entry = { resolve, timer: null }
+    entry.timer = setTimeout(() => {
+      residentDisabled = true
+      stopResident()
+      entry.resolve({ status: 'error', error: 'the resident bridge timed out; the next call uses a fresh process' })
+    }, RESIDENT_TIMEOUT_MS)
+    session.pending.push(entry)
+    try {
+      session.child.stdin.write(JSON.stringify({ action, args }) + '\n')
+    } catch (error) {
+      clearTimeout(entry.timer)
+      const at = session.pending.indexOf(entry)
+      if (at >= 0) session.pending.splice(at, 1)
+      stopResident()
+      entry.resolve({ status: 'error', error: 'resident bridge write failed: ' + error.message })
+    }
+  })
+}
+
 /** Queued bridge entry point (see olkChain above). */
 function olk(action, args = {}, opts = {}) {
   // The fixture is the whole mailbox when MAILDESK_FIXTURE=1: the agent's
   // tools have to land on the same data the panel shows, or a host without
   // Outlook can render a mailbox but not answer a single mail question.
   if (fixture !== null) return Promise.resolve(fixtureCall(action, args))
-  const run = () => olkOne(action, args, opts)
+  const warm = !residentDisabled && opts.confirmed !== true && action !== 'compose_send'
+  const run = () => (warm ? residentCall(action, args) : olkOne(action, args, opts))
   const next = olkChain.tail.then(run, run)
   olkChain.tail = next.catch(() => { /* keep the queue alive after failures */ })
   return next
@@ -628,6 +729,9 @@ export function apply(ctx) {
 
   // NewMailEx push watcher + badge state route (opt out with OLK_WATCH=0).
   startWatcher(ctx)
+  // The resident bridge lives as long as the plugin does; a reload must not
+  // leave a PowerShell process holding COM open behind it.
+  ctx.effect(() => () => stopResident())
   // The draft store lives inside the route injection, but the compose tool is
   // registered outside it: hand the API across once the routes are mounted.
   let composeApi = null

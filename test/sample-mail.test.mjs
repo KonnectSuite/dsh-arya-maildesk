@@ -12,6 +12,9 @@ import assert from 'node:assert/strict'
 
 delete process.env.MAILDESK_FIXTURE
 process.env.OLK_WATCH = '0'
+// This suite imports the host with live COM, and the resident bridge would keep
+// the process alive after the assertions; it exercises the one-shot path.
+process.env.MAILDESK_NO_RESIDENT = '1'
 
 const plugin = await import('../index.js')
 

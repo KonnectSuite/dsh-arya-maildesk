@@ -269,6 +269,7 @@ window.__ModuleLoader__.load({
     '.md-move-row{display:block;width:100%;text-align:left;padding:6px 9px;font-size:12px;background:none;border:0;border-bottom:1px solid #f2f2f2;cursor:pointer;color:inherit;font:inherit}',
     '.md-move-row:hover{background:#f4f6fa}',
     '.md-search{width:170px;flex:none;font:inherit;font-size:12px;padding:4px 8px;border:1px solid #d8dde5;border-radius:7px;background:#fff}',
+    '.md-confirm-content{max-height:120px;overflow:auto;background:#fafbfc;border:1px solid #e6e6e6;border-radius:8px;padding:8px;font-size:12px;line-height:1.45;color:#333}',
     '.md-ask-empty{opacity:.65;font-size:12px;line-height:1.45}',
     '.md-ask-err{color:#e5484d;font-size:12px}',
     '.md-ask-compose{display:flex;gap:8px;padding:8px 10px;align-items:flex-end}',
@@ -1407,6 +1408,16 @@ window.__ModuleLoader__.load({
                   c.confirm.preview.cc ? h('div', { className: 'md-confirm-row' }, h('b', null, 'Cc'), h('span', null, c.confirm.preview.cc)) : null,
                   c.confirm.preview.bcc ? h('div', { className: 'md-confirm-row' }, h('b', null, 'Bcc'), h('span', null, c.confirm.preview.bcc)) : null,
                   h('div', { className: 'md-confirm-row' }, h('b', null, 'Subject'), h('span', null, c.confirm.preview.subject || '(no subject)')),
+                  // The gate promises "what will leave"; the body is part of
+                  // that, so show it instead of only naming the recipient.
+                  h('div', { className: 'md-confirm-content' },
+                    String(c.confirm.preview.htmlBody || '')
+                      .replace(/<[^>]+>/g, ' ')
+                      .replace(/&nbsp;/g, ' ')
+                      .replace(/&amp;/g, '&')
+                      .replace(/\s+/g, ' ')
+                      .trim()
+                    || '(empty body)'),
                   h('div', { className: 'md-confirm-body' }, 'The message is sent as HTML and includes the quoted mail below your text. Only this exact content is sent — editing it afterwards requires a new confirmation.'),
                   h('div', { className: 'md-compose-actions', style: { borderTop: 0, padding: '12px 0 0' } },
                     h('button', { className: 'md-btn primary', type: 'button', disabled: c.busy !== '', onClick: () => void confirmSend() }, c.busy === 'send' ? 'Sending…' : 'Send now'),

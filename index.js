@@ -997,6 +997,39 @@ export function apply(ctx) {
       } catch { /* cosmetic */ }
     }
 
+    // `ask_user_question` blocks the calling turn until someone answers it. In
+    // the chat the harness owns that popup; in the panel nobody rendered it, so
+    // the card has to. This reads the question the agent is waiting on, if any.
+    const readPendingQuestion = () => {
+      const questions = ctx.get('userQuestions')
+      const agents = ctx.get('agents')
+      if (questions === undefined || agents === undefined || askState.sessionId === null) return null
+      if (typeof questions.continued !== 'function') return null
+      let agent
+      try { agent = agents.get(askState.sessionId) } catch { return null }
+      if (agent === undefined || agent === null) return null
+      let active
+      try { active = questions.continued(agent) } catch { return null }
+      if (!Array.isArray(active) || active.length === 0) return null
+      const item = active[0]
+      if (item === null || typeof item !== 'object') return null
+      const list = Array.isArray(item.questions) ? item.questions : []
+      if (list.length === 0) return null
+      return {
+        callId: String(item.callId || ''),
+        questions: list.map((q) => ({
+          id: String(q.id || ''),
+          header: typeof q.header === 'string' ? q.header : null,
+          question: String(q.question || ''),
+          multiSelect: q.multiSelect === true,
+          options: (Array.isArray(q.options) ? q.options : []).map((o) => ({
+            label: String(o.label || ''),
+            description: typeof o.description === 'string' ? o.description : null,
+          })),
+        })),
+      }
+    }
+
     // A session's log also holds the harness's own context injections (runtime
     // context, skill catalogue, clock) as user-role messages. The panel must
     // show the person's words and the answer, nothing else.
@@ -1083,6 +1116,12 @@ export function apply(ctx) {
               let text = textOfMessage(event.data && (event.data.message !== undefined ? event.data.message : event.data))
               if (text === '') continue
               if (event.type === 'user/message') {
+                // The prompt opens with the panel's ground rules and closes with
+                // the mail context; neither is something the person wrote.
+                if (text.startsWith('[mail assistant] ')) {
+                  const cut = text.indexOf('\n\n')
+                  if (cut > 0) text = text.slice(cut + 2)
+                }
                 // The prompt carries the panel's context as a trailing block so
                 // the agent knows which mail "this one" is. The person wrote the
                 // question, so the drawer shows only that part of the message.
@@ -1106,7 +1145,7 @@ export function apply(ctx) {
                 at: typeof event.time === 'number' ? (event.time < 1e12 ? event.time * 1000 : event.time) : null,
               })
             }
-            res.end(JSON.stringify({ ok: true, sessionId, messages, running }))
+            res.end(JSON.stringify({ ok: true, sessionId, messages, running, question: readPendingQuestion() }))
             return
           }
           const body = await readJsonBody(req, 64 * 1024)
@@ -1138,6 +1177,44 @@ export function apply(ctx) {
             }
             return
           }
+          // Answering ask_user_question: the reply is steered into the agent as
+          // the message that tool is waiting for, so the turn continues.
+          if (payload.action === 'answer') {
+            const questions = ctx.get('userQuestions')
+            const agents = ctx.get('agents')
+            const callId = String(payload.callId || '')
+            const answers = Array.isArray(payload.answers) ? payload.answers : []
+            if (questions === undefined || agents === undefined) {
+              res.statusCode = 501
+              res.end(JSON.stringify({ ok: false, error: 'this host mounts no question service' }))
+              return
+            }
+            if (askState.sessionId === null || callId === '' || answers.length === 0) {
+              res.statusCode = 400
+              res.end(JSON.stringify({ ok: false, error: 'callId and answers are required' }))
+              return
+            }
+            let agent
+            try { agent = agents.get(askState.sessionId) } catch { agent = undefined }
+            if (agent === undefined || agent === null) {
+              res.statusCode = 409
+              res.end(JSON.stringify({ ok: false, error: 'the assistant session is not live' }))
+              return
+            }
+            try {
+              const accepted = questions.answer(agent, callId, {
+                answers: answers.map((item) => ({
+                  id: String(item.id || ''),
+                  selected: Array.isArray(item.selected) ? item.selected.map(String) : [],
+                  ...(typeof item.custom === 'string' && item.custom !== '' ? { custom: item.custom } : {}),
+                })),
+              })
+              res.end(JSON.stringify({ ok: true, queued: accepted === true }))
+            } catch (error) {
+              res.end(JSON.stringify({ ok: false, error: (error && error.message) || String(error) }))
+            }
+            return
+          }
           const text = String(payload.text || '').trim()
           if (text === '') {
             res.statusCode = 400
@@ -1156,7 +1233,13 @@ export function apply(ctx) {
                 + (payload.selectedId ? ' (entryId ' + String(payload.selectedId) + ')' : '')
               : '',
           ].filter(Boolean).join(', ')
-          const composed = context === '' ? text : text + '\n\n(mail panel · ' + context + ')'
+          // The panel has no popup for ask_user_question: that surface belongs
+          // to the chat client, and a question raised here would block the turn
+          // with nothing on screen to answer it. Ask in the reply instead.
+          const ASK_RULE = '[mail assistant] You are answering inside the Mail panel, which has no popup for '
+            + 'ask_user_question. Never call that tool: if you need a decision from the person, ask it in your '
+            + 'reply as a plain question and stop; their next message will answer it.'
+          const composed = ASK_RULE + '\n\n' + text + (context === '' ? '' : '\n\n(mail panel · ' + context + ')')
           const requestId = randomUUID()
           // The controller owns the durable source; its second argument is a
           // cancellation signal, not prompt metadata.
@@ -1181,6 +1264,84 @@ export function apply(ctx) {
         }
       },
     }), 'dsh-arya-maildesk: in-panel assistant route')
+
+    // ---- models --------------------------------------------------------
+    // The assistant runs a real harness session, so it can use any model the
+    // deployment routes. This is the same catalog the chat's picker shows.
+    ctx.effect(() => webCtx.webServer.register({
+      kind: 'exact',
+      path: '/maildesk/api/models',
+      handler: async (req, res) => {
+        res.setHeader('Content-Type', 'application/json; charset=utf-8')
+        if (req.method !== 'GET' && req.method !== 'POST') {
+          res.statusCode = 405
+          res.end(JSON.stringify({ ok: false, error: 'GET or POST only' }))
+          return
+        }
+        if (!sameOrigin(req)) {
+          res.statusCode = 403
+          res.end(JSON.stringify({ ok: false, error: 'cross-origin request refused' }))
+          return
+        }
+        const controller = ctx.get('sessionController')
+        if (controller === undefined) {
+          res.statusCode = 501
+          res.end(JSON.stringify({ ok: false, error: 'this host mounts no session controller' }))
+          return
+        }
+        try {
+          if (req.method === 'GET') {
+            const catalog = await controller.modelCatalog()
+            const groups = Array.isArray(catalog.groups) ? catalog.groups : []
+            res.end(JSON.stringify({
+              ok: true,
+              selected: catalog.default,
+              groups: groups.map((group) => ({
+                id: group.id,
+                name: group.name,
+                models: (group.models || []).map((model) => ({
+                  id: model.id,
+                  name: model.name,
+                  badge: model.badge,
+                  reasoning: model.reasoning,
+                })),
+              })),
+              failures: catalog.failures || [],
+            }))
+            return
+          }
+          const body = await readJsonBody(req, 16 * 1024)
+          if (body.error !== undefined) {
+            res.statusCode = 400
+            res.end(JSON.stringify({ ok: false, error: body.error }))
+            return
+          }
+          const payload = body.value !== null && typeof body.value === 'object' ? body.value : {}
+          const provider = String(payload.provider || '').trim()
+          const model = String(payload.model || '').trim()
+          if (provider === '' || model === '') {
+            res.statusCode = 400
+            res.end(JSON.stringify({ ok: false, error: 'provider and model are required' }))
+            return
+          }
+          // A model can be chosen before the first question: the session is
+          // created lazily, so create it here and select on it.
+          if (askState.sessionId === null) await createAskSession(controller)
+          const selected = await controller.selectModel({
+            sessionId: askState.sessionId,
+            provider,
+            model,
+            ...(typeof payload.reasoningEffort === 'string' && payload.reasoningEffort !== ''
+              ? { reasoningEffort: payload.reasoningEffort }
+              : {}),
+          })
+          res.end(JSON.stringify({ ok: true, selected: selected && selected.selected ? selected.selected : null }))
+        } catch (error) {
+          res.statusCode = 500
+          res.end(JSON.stringify({ ok: false, error: (error && error.message) || String(error) }))
+        }
+      },
+    }), 'dsh-arya-maildesk: models route')
 
     // ---- accounts ------------------------------------------------------
     // Hide one of the profile's stores from this workspace. Outlook keeps every

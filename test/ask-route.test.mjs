@@ -128,12 +128,14 @@ function check(label, ok, detail) {
   const { request: p, signal } = seen.prompts[0]
   check('the prompt names the session', p.sessionId === 'sess-1')
   check('the prompt carries the panel context', String(p.content[0].text).includes('folder \\kphung@frommconnect.com\\Inbox') && String(p.content[0].text).includes('Schedule AN-X4'), String(p.content[0].text))
-  check('the prompt text itself comes first', String(p.content[0].text).startsWith('anything new?'), String(p.content[0].text))
+  check('the prompt opens with the panel ground rules', String(p.content[0].text).startsWith('[mail assistant] ') && String(p.content[0].text).includes('Never call that tool'), String(p.content[0].text).slice(0, 80))
+  check('the words follow the rules block', String(p.content[0].text).includes('\n\nanything new?'), String(p.content[0].text).slice(0, 160))
+  check('the rules tell the agent to ask in plain text', String(p.content[0].text).includes('ask it in your reply'), String(p.content[0].text).slice(0, 200))
   check('the prompt carries a request id and a cancellation signal', typeof p.requestId === 'string' && p.requestId.length > 0 && signal !== null && typeof signal.throwIfAborted === 'function', String(p.requestId))
 
   const again = await hit('POST', { text: 'and now?' })
   check('a second question reuses the same session', again.json.sessionId === 'sess-1' && seen.created === 1, String(seen.created))
-  check('a question without context sends the words alone', seen.prompts[1].request.content[0].text === 'and now?', String(seen.prompts[1].request.content[0].text))
+  check('a question without context sends the words alone', seen.prompts[1].request.content[0].text.endsWith('\n\nand now?') && !seen.prompts[1].request.content[0].text.includes('(mail panel'), String(seen.prompts[1].request.content[0].text).slice(-40))
 }
 
 // 3. The reply is read back as readable text only: the tool call is named,

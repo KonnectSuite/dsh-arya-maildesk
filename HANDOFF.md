@@ -44,12 +44,23 @@ Registration surface (all published APIs, no harness edits): `main` key `mail`, 
 `mail` (its icon carries the new-arrival badge; the `sidebar.footer.action` chip was removed), `tool.call.toolview`
 key `maildesk_compose`, `sidebarRightTabs` type `maildesk-draft` + `sidebar.right.pane.tab` key
 `dsh-arya-maildesk:draft`.
-Routes: `GET /maildesk/api/health`, `GET|POST /maildesk/api/ask`, `GET|POST /maildesk/api/accounts`; `POST /maildesk/api/call`,
+Routes: `GET /maildesk/api/health`, `GET|POST /maildesk/api/ask`, `GET|POST /maildesk/api/accounts`,
+`GET|POST /maildesk/api/models`; `POST /maildesk/api/call`,
 `/maildesk/api/draft`, `/maildesk/api/send`, `/maildesk/api/fixture` — all same-origin, request bodies capped at 256 KB.
 
 `/maildesk/api/ask` is the in-panel agent: POST runs a real harness session (`ctx.get('sessionController')`) with
-the question plus the panel's context, GET reads that session's transcript back as `{role, text}`. Nothing in the
-client talks to a model directly, and the agent there is the same agent the chat gets, tools and gates included.
+the question plus the panel's context, GET reads that session's transcript back as `{role, text, at}` plus
+`running` and any pending `question`. Nothing in the client talks to a model directly, and the agent there is the
+same agent the chat gets, tools and gates included. `GET|POST /maildesk/api/models` proxies
+`sessionController.modelCatalog()` / `selectModel()`, which is how the card's header chip names and changes the model.
+
+**Question deadlock, and why the prompt carries a rule.** `ask_user_question` is answered by the *chat* client's
+popup; a question raised from the panel session blocks the turn with no surface to answer it. The panel prompt
+therefore opens with `[mail assistant] … never call that tool; ask in your reply instead`, and the transcript
+strips that block before display. `readPendingQuestion()` plus the `answer` action stay in place for a host that
+projects questions (`userQuestions.continued(agent)`), but on this build that projection is absent, so the rule is
+what keeps the turn moving. If that ever regresses, the symptom is a card stuck on *Working…* with one step named
+`ask_user_question` — cancel it with **Stop**.
 
 The browser half **cannot** use `host.call` (that provider is for model-authored dynamic plugins, not for
 bundles), which is why the panel talks over routes.

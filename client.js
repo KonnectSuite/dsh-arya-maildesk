@@ -328,6 +328,23 @@ window.__ModuleLoader__.load({
     '.md-ask-send:disabled{opacity:.45;cursor:default}',
     '.md-ask-grip{position:absolute;left:0;bottom:0;width:16px;height:16px;cursor:nesw-resize;touch-action:none}',
     '.md-ask-grip::after{content:"";position:absolute;left:3px;bottom:3px;width:8px;height:8px;border-left:2px solid var(--dsw-alias-border-subtle,#cfd5de);border-bottom:2px solid var(--dsw-alias-border-subtle,#cfd5de);border-radius:2px}',
+    '.md-ask-modelchip{border:1px solid var(--dsw-alias-border-subtle,#dfe3ea);background:transparent;color:var(--dsw-alias-label-secondary,#5a6069);font:inherit;font-size:10.5px;padding:2px 8px;border-radius:999px;cursor:pointer;white-space:nowrap;max-width:150px;overflow:hidden;text-overflow:ellipsis}',
+    '.md-ask-modelchip:hover{background:var(--dsw-alias-interactive-bg-hover,#f3f5f9);color:var(--dsw-alias-label-primary,#1b1b1b)}',
+    '.md-ask-models{position:absolute;right:12px;top:52px;z-index:6;background:var(--dsw-alias-bg-elevated,#fff);border:1px solid var(--dsw-alias-border-subtle,#e2e4e9);border-radius:12px;box-shadow:0 14px 36px rgba(0,0,0,.2);padding:8px;min-width:250px;display:flex;flex-direction:column;gap:6px}',
+    '.md-ask-models-head{font-size:10px;text-transform:uppercase;letter-spacing:.5px;color:var(--dsw-alias-label-tertiary,#8a8f98);padding:2px 4px}',
+    '.md-ask-modelrow{display:flex;flex-direction:column;gap:4px;padding:2px 0 6px}',
+    '.md-ask-modelpick{text-align:left;font:inherit;font-size:12.5px;padding:5px 8px;border-radius:8px;border:1px solid transparent;background:transparent;color:inherit;cursor:pointer}',
+    '.md-ask-modelpick:hover{background:var(--dsw-alias-interactive-bg-hover,#f3f5f9)}',
+    '.md-ask-modelpick.on{border-color:var(--dsw-alias-label-accent,#3b6ef5);color:var(--dsw-alias-label-accent,#3b6ef5);font-weight:600}',
+    '.md-ask-efforts{display:flex;gap:4px;padding-left:8px}',
+    '.md-ask-effort{font:inherit;font-size:10.5px;padding:2px 8px;border-radius:999px;border:1px solid var(--dsw-alias-border-subtle,#dfe3ea);background:transparent;color:inherit;cursor:pointer}',
+    '.md-ask-effort.on{background:var(--dsw-alias-bg-subtle,#eef2ff);border-color:var(--dsw-alias-label-accent,#3b6ef5);color:var(--dsw-alias-label-accent,#2350c9)}',
+    '.md-ask-question{margin:0 12px 8px;padding:10px 12px;border-radius:12px;border:1px solid var(--dsw-alias-border-subtle,#e2e4e9);background:var(--dsw-alias-bg-subtle,#f7f8fb);display:flex;flex-direction:column;gap:8px;flex:none}',
+    '.md-ask-qhead{font-size:10.5px;text-transform:uppercase;letter-spacing:.4px;color:var(--dsw-alias-label-tertiary,#8a8f98)}',
+    '.md-ask-qtext{font-size:12.5px;line-height:1.45}',
+    '.md-ask-qopt{align-self:flex-start;font:inherit;font-size:12px;padding:6px 12px;border-radius:9px;border:1px solid var(--dsw-alias-border-subtle,#dfe3ea);background:var(--dsw-alias-bg-elevated,#fff);color:inherit;cursor:pointer}',
+    '.md-ask-qopt:hover{border-color:var(--dsw-alias-label-accent,#3b6ef5)}',
+    '.md-ask-qopt.on{border-color:var(--dsw-alias-label-accent,#3b6ef5);background:var(--dsw-alias-bg-subtle,#eef2ff);color:var(--dsw-alias-label-accent,#2350c9)}',
     '.md-ask-sug{display:flex;flex-direction:column;gap:6px}',
     '.md-ask-sug button{text-align:left;font:inherit;font-size:12px;padding:8px 10px;border-radius:10px;border:1px solid var(--dsw-alias-border-subtle,#e6e9ef);background:transparent;color:inherit;cursor:pointer}',
     '.md-ask-sug button:hover{background:var(--dsw-alias-interactive-bg-hover,#f3f5f9)}',
@@ -833,6 +850,15 @@ window.__ModuleLoader__.load({
       })
       const [askIgnoreSelection, setAskIgnoreSelection] = React.useState(false)
       const [askToolsOpen, setAskToolsOpen] = React.useState({})
+      // Models the host routes, and the one this session uses.
+      const [askModels, setAskModels] = React.useState(null)
+      const [askModelOpen, setAskModelOpen] = React.useState(false)
+      const [askModelBusy, setAskModelBusy] = React.useState(false)
+      // A question the agent is blocked on (ask_user_question). The chat renders
+      // that popup; in the panel the card has to, or the turn waits forever.
+      const [askQuestion, setAskQuestion] = React.useState(null)
+      const [askAnswers, setAskAnswers] = React.useState({})
+      const [askAnswerBusy, setAskAnswerBusy] = React.useState(false)
       const panelRef = React.useRef(null)
       const askBodyRef = React.useRef(null)
       const askInputRef = React.useRef(null)
@@ -1405,6 +1431,7 @@ window.__ModuleLoader__.load({
           })
           askRunningRef.current = data.running === true
           setAskRunning(data.running === true)
+          setAskQuestion(data.question !== null && data.question !== undefined ? data.question : null)
         } catch { /* the poll retries */ }
       }
 
@@ -1457,10 +1484,80 @@ window.__ModuleLoader__.load({
         try {
           await askPost({ action: 'new' })
           setAskLog([])
+          setAskQuestion(null)
+          setAskAnswers({})
           setAskRunning(false)
           askRunningRef.current = false
         } catch (error) {
           setAskError(error && error.message ? error.message : String(error))
+        }
+      }
+
+      // ---- models ------------------------------------------------------
+      const loadModels = async () => {
+        try {
+          const res = await fetch('/maildesk/api/models')
+          const data = await res.json()
+          if (data !== null && data.ok === true) setAskModels({ selected: data.selected, groups: data.groups || [] })
+        } catch { /* the picker simply does not open */ }
+      }
+
+      const chooseModel = async (provider, model, reasoningEffort) => {
+        if (askModelBusy) return
+        setAskModelBusy(true)
+        setAskError('')
+        try {
+          const res = await fetch('/maildesk/api/models', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ provider, model, reasoningEffort }),
+          })
+          const data = await res.json().catch(() => null)
+          if (data === null || data.ok !== true) throw new Error((data && data.error) || ('HTTP ' + res.status))
+          setAskModels((prev) => ({ selected: data.selected || (prev && prev.selected), groups: prev === null ? [] : prev.groups }))
+          setAskModelOpen(false)
+        } catch (error) {
+          setAskError(error && error.message ? error.message : String(error))
+        } finally {
+          setAskModelBusy(false)
+        }
+      }
+
+      const modelName = (() => {
+        if (askModels === null) return ''
+        const sel = askModels.selected || {}
+        const group = (askModels.groups || []).find((g) => g.id === sel.provider)
+        const entry = group === undefined ? null : (group.models || []).find((m) => m.id === sel.model)
+        const label = entry === null ? String(sel.model || '') : entry.name
+        const efforts = entry !== null && entry.reasoning !== undefined ? entry.reasoning.efforts || [] : []
+        const effort = efforts.find((e) => e.id === sel.reasoningEffort)
+          || efforts.find((e) => e.id === (entry !== null && entry.reasoning !== undefined ? entry.reasoning.defaultEffort : undefined))
+        return String(label).replace(/^DeepSeek-/, '') + (effort === undefined ? '' : ' · ' + effort.name)
+      })()
+
+      const sendAnswer = async () => {
+        if (askQuestion === null || askAnswerBusy) return
+        setAskAnswerBusy(true)
+        setAskError('')
+        try {
+          const answers = askQuestion.questions.map((q) => ({
+            id: q.id,
+            selected: Array.isArray(askAnswers[q.id]) ? askAnswers[q.id] : [],
+          }))
+          const res = await fetch('/maildesk/api/ask', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ action: 'answer', callId: askQuestion.callId, answers }),
+          })
+          const data = await res.json().catch(() => null)
+          if (data === null || data.ok !== true) throw new Error((data && data.error) || ('HTTP ' + res.status))
+          setAskQuestion(null)
+          setAskAnswers({})
+          await readAskLog()
+        } catch (error) {
+          setAskError(error && error.message ? error.message : String(error))
+        } finally {
+          setAskAnswerBusy(false)
         }
       }
 
@@ -1491,6 +1588,12 @@ window.__ModuleLoader__.load({
       React.useEffect(() => {
         if (askOpen && askInputRef.current !== null) askInputRef.current.focus()
       }, [askOpen])
+
+      // The catalog is read when the card first opens, so the header can name
+      // the model before anyone touches it.
+      React.useEffect(() => {
+        if (askOpen && askModels === null) void loadModels()
+      }, [askOpen, askModels])
 
       // Ctrl+J is the assistant's own door, from anywhere in the panel.
       React.useEffect(() => {
@@ -2043,6 +2146,16 @@ window.__ModuleLoader__.load({
               h('div', null,
                 h('div', { className: 'md-ask-title' }, 'Mail assistant'),
                 h('div', { className: 'md-ask-status' }, askRunning ? 'Working…' : 'Ready')),
+              h('button', {
+                className: 'md-ask-modelchip',
+                type: 'button',
+                title: 'Model for this assistant',
+                onPointerDown: (ev) => ev.stopPropagation(),
+                onClick: () => {
+                  setAskModelOpen((v) => !v)
+                  if (askModels === null) void loadModels()
+                },
+              }, modelName === '' ? 'Model' : modelName),
               h('span', { className: 'md-spacer' }),
               askRunning ? h('button', { className: 'md-btn', type: 'button', onClick: () => void stopAsk() }, 'Stop') : null,
               h('button', { className: 'md-btn', type: 'button', title: 'Start a new conversation', onClick: () => void newAskChat() }, 'New'),
@@ -2052,6 +2165,57 @@ window.__ModuleLoader__.load({
                   h('span', { className: 'md-ask-ctx' },
                     'About: ' + (openMail.subject || '(no subject)') + (thread !== null ? ' · ' + thread.messages.length + ' messages' : ''),
                     h('button', { type: 'button', title: 'Ask without this mail', onClick: () => setAskIgnoreSelection(true) }, '×')))
+              : null,
+            askModelOpen && askModels !== null
+              ? h('div', { className: 'md-ask-models' },
+                  (askModels.groups || []).map((group) => h('div', { key: group.id },
+                    h('div', { className: 'md-ask-models-head' }, group.name || group.id),
+                    (group.models || []).map((entry) => {
+                      const sel = askModels.selected || {}
+                      const active = sel.provider === group.id && sel.model === entry.id
+                      const efforts = entry.reasoning !== undefined ? entry.reasoning.efforts || [] : []
+                      return h('div', { key: entry.id, className: 'md-ask-modelrow' },
+                        h('button', {
+                          className: 'md-ask-modelpick' + (active ? ' on' : ''),
+                          type: 'button',
+                          disabled: askModelBusy,
+                          onClick: () => void chooseModel(group.id, entry.id, entry.reasoning !== undefined ? entry.reasoning.defaultEffort : undefined),
+                        }, entry.name || entry.id),
+                        efforts.length > 0
+                          ? h('div', { className: 'md-ask-efforts' }, efforts.map((effort) => h('button', {
+                              key: effort.id,
+                              type: 'button',
+                              className: 'md-ask-effort' + (active && sel.reasoningEffort === effort.id ? ' on' : ''),
+                              disabled: askModelBusy,
+                              onClick: () => void chooseModel(group.id, entry.id, effort.id),
+                            }, effort.name || effort.id)))
+                          : null)
+                    }))))
+              : null,
+            askQuestion !== null
+              ? h('div', { className: 'md-ask-question' },
+                  askQuestion.questions.map((q) => h('div', { key: q.id, className: 'md-ask-q' },
+                    q.header ? h('div', { className: 'md-ask-qhead' }, q.header) : null,
+                    h('div', { className: 'md-ask-qtext' }, q.question),
+                    (q.options || []).map((opt) => h('button', {
+                      key: opt.label,
+                      type: 'button',
+                      title: opt.description || '',
+                      className: 'md-ask-qopt' + ((askAnswers[q.id] || []).includes(opt.label) ? ' on' : ''),
+                      onClick: () => setAskAnswers((prev) => {
+                        const current = Array.isArray(prev[q.id]) ? prev[q.id] : []
+                        const next = q.multiSelect === true
+                          ? (current.includes(opt.label) ? current.filter((x) => x !== opt.label) : current.concat([opt.label]))
+                          : [opt.label]
+                        return { ...prev, [q.id]: next }
+                      }),
+                    }, opt.label)))),
+                  h('button', {
+                    className: 'md-btn primary',
+                    type: 'button',
+                    disabled: askAnswerBusy || askQuestion.questions.some((q) => (askAnswers[q.id] || []).length === 0),
+                    onClick: () => void sendAnswer(),
+                  }, askAnswerBusy ? 'Sending…' : 'Send answer'))
               : null,
             askThreadBody,
             h('div', { className: 'md-ask-compose' },

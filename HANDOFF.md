@@ -43,8 +43,8 @@ Two halves, one package:
 Registration surface (all published APIs, no harness edits): `main` key `mail`, `sidebar.panellist` id
 `mail`, `sidebar.footer.action` id `newmail-badge`, `tool.call.toolview` key `maildesk_compose`,
 `sidebarRightTabs` type `maildesk-draft` + `sidebar.right.pane.tab` key `dsh-arya-maildesk:draft`.
-Routes: `GET /maildesk/api/health`, `GET|POST /maildesk/api/ask`; `POST /maildesk/api/call`, `/maildesk/api/draft`,
-`/maildesk/api/send`, `/maildesk/api/fixture` — all same-origin, request bodies capped at 256 KB.
+Routes: `GET /maildesk/api/health`, `GET|POST /maildesk/api/ask`, `GET|POST /maildesk/api/accounts`; `POST /maildesk/api/call`,
+`/maildesk/api/draft`, `/maildesk/api/send`, `/maildesk/api/fixture` — all same-origin, request bodies capped at 256 KB.
 
 `/maildesk/api/ask` is the in-panel agent: POST runs a real harness session (`ctx.get('sessionController')`) with
 the question plus the panel's context, GET reads that session's transcript back as `{role, text}`. Nothing in the
@@ -368,7 +368,16 @@ Open:
    **(blocks the release claim, not the UI work)**
 2. **Finish the panel agent** (it exists and works): persist its session id across restarts, stream instead of the
    1.5 s poll, show the tool calls it makes, and let it act on the selected mail without being told the entryId.
-3. Panel search box over `maildesk_search_mail` (small, high daily-use value).
+3. **Outlook-shaped organisation** (owner's next ask). Probed 2026-10-30 on this profile:
+   - **Threads are available.** `MailItem.ConversationID` / `ConversationTopic` are readable and
+     `GetConversation()` returns roots and children — a real "RE: Schedule AN-X4" thread came back as two
+     ordered messages. A `thread { entryId }` bridge action plus a conversation view in the reading pane is
+     straightforward.
+   - **Focused/Other is not.** The classification lives server-side; the candidate MAPI properties
+     (`0x40820003`, `0x4082000B`, `0x40820048`, `0x0E1F0003`) are all unreadable through `PropertyAccessor`,
+     and a `Restrict` on the conversation id returned nothing. Either skip the tab or define our own rule and
+     label it as ours — do not fake Outlook's.
+4. Panel search box over `maildesk_search_mail` (small, high daily-use value).
 4. Persistent drafts (write the draft store to `storage`), so a restart stops eating replies.
 5. Publish 1.0.4 (npm credentials needed on this machine — none are present), then catalogue + GitHub release.
 6. A morning-brief prompt/tool built on `list_mail` + `read_mail` — daily value with no new UI.

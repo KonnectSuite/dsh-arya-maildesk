@@ -230,15 +230,30 @@ function residentCall(action, args) {
   })
 }
 
+/** Drop the stores a person hid, and remember every store ever seen. */
+function applyAccountFilter(value, opts) {
+  if (value === null || typeof value !== 'object' || !Array.isArray(value.folders)) return value
+  for (const folder of value.folders) {
+    if (folder !== null && typeof folder.store === 'string' && folder.store !== '') knownStores.add(folder.store)
+  }
+  if (opts.rawFolders === true) return value
+  const hidden = hiddenStores()
+  if (hidden.size === 0) return value
+  return { ...value, folders: value.folders.filter((f) => f === null || !hidden.has(f.store)) }
+}
+
 /** Queued bridge entry point (see olkChain above). */
 function olk(action, args = {}, opts = {}) {
   // The fixture is the whole mailbox when MAILDESK_FIXTURE=1: the agent's
   // tools have to land on the same data the panel shows, or a host without
   // Outlook can render a mailbox but not answer a single mail question.
-  if (fixture !== null) return Promise.resolve(fixtureCall(action, args))
+  if (fixture !== null) {
+    const value = fixtureCall(action, args)
+    return Promise.resolve(action === 'list_folders' ? applyAccountFilter(value, opts) : value)
+  }
   const warm = !residentDisabled && opts.confirmed !== true && action !== 'compose_send'
   const run = () => (warm ? residentCall(action, args) : olkOne(action, args, opts))
-  const next = olkChain.tail.then(run, run)
+  const next = olkChain.tail.then(run, run).then((value) => (action === 'list_folders' ? applyAccountFilter(value, opts) : value))
   olkChain.tail = next.catch(() => { /* keep the queue alive after failures */ })
   return next
 }
@@ -610,6 +625,24 @@ function fixtureCall(action, args = {}) {
  */
 const FOLDER_CACHE_MS = 5 * 60 * 1000
 const folderCache = new Map()
+// Accounts the person does not want to see here. Outlook keeps every store in
+// the profile; this only hides one from the panel and the agent, so nothing is
+// removed and Outlook's own account list is untouched.
+const ACCOUNTS_FILE = process.env.MAILDESK_ACCOUNTS_FILE || join(tmpdir(), 'dsh-arya-maildesk-accounts.json')
+const accountState = { hidden: [] }
+try {
+  const saved = JSON.parse(readFileSync(ACCOUNTS_FILE, 'utf8'))
+  if (saved !== null && typeof saved === 'object' && Array.isArray(saved.hidden)) {
+    accountState.hidden = saved.hidden.filter((s) => typeof s === 'string' && s !== '')
+  }
+} catch { /* first run */ }
+const saveAccounts = () => {
+  try { writeFileSync(ACCOUNTS_FILE, JSON.stringify({ hidden: accountState.hidden }), 'utf8') } catch { /* memory only */ }
+}
+const hiddenStores = () => new Set(accountState.hidden)
+// Every store name this host has seen, so the Accounts list can still offer a
+// hidden one to switch back on.
+const knownStores = new Set()
 // Anything that changes read state, a folder count or a move makes the cached
 // tree stale; a person who just marked something read must not wait five
 // minutes for the rail to agree.
@@ -1101,6 +1134,77 @@ export function apply(ctx) {
         }
       },
     }), 'dsh-arya-maildesk: in-panel assistant route')
+
+    // ---- accounts ------------------------------------------------------
+    // Hide one of the profile's stores from this workspace. Outlook keeps every
+    // account; this is a view filter for the panel and the agent, persisted so
+    // it survives a reload.
+    ctx.effect(() => webCtx.webServer.register({
+      kind: 'exact',
+      path: '/maildesk/api/accounts',
+      handler: async (req, res) => {
+        res.setHeader('Content-Type', 'application/json; charset=utf-8')
+        if (req.method !== 'GET' && req.method !== 'POST') {
+          res.statusCode = 405
+          res.end(JSON.stringify({ ok: false, error: 'GET or POST only' }))
+          return
+        }
+        if (!sameOrigin(req)) {
+          res.statusCode = 403
+          res.end(JSON.stringify({ ok: false, error: 'cross-origin request refused' }))
+          return
+        }
+        try {
+          if (req.method === 'POST') {
+            const body = await readJsonBody(req, 8 * 1024)
+            if (body.error !== undefined) {
+              res.statusCode = 400
+              res.end(JSON.stringify({ ok: false, error: body.error }))
+              return
+            }
+            const payload = body.value !== null && typeof body.value === 'object' ? body.value : {}
+            const store = String(payload.store || '').trim()
+            if (store === '') {
+              res.statusCode = 400
+              res.end(JSON.stringify({ ok: false, error: 'store is required' }))
+              return
+            }
+            const next = new Set(accountState.hidden)
+            if (payload.hidden === true) next.add(store)
+            else next.delete(store)
+            const visibleLeft = [...knownStores].filter((s) => !next.has(s)).length
+            if (knownStores.size > 0 && visibleLeft < 1) {
+              res.statusCode = 409
+              res.end(JSON.stringify({ ok: false, error: 'at least one account has to stay visible' }))
+              return
+            }
+            accountState.hidden = [...next]
+            saveAccounts()
+            folderCache.clear()
+          }
+          // The Accounts list has to name stores it is not showing, so learn
+          // them from an unfiltered walk the first time it is asked.
+          if (knownStores.size === 0) {
+            const raw = await olk('list_folders', { roots: true }, { rawFolders: true })
+            if (raw !== null && Array.isArray(raw.folders)) {
+              for (const f of raw.folders) {
+                if (f !== null && typeof f.store === 'string' && f.store !== '') knownStores.add(f.store)
+              }
+            }
+          }
+          const stores = [...knownStores].sort()
+          res.end(JSON.stringify({
+            ok: true,
+            stores,
+            hidden: accountState.hidden,
+            visible: stores.filter((s) => !accountState.hidden.includes(s)),
+          }))
+        } catch (error) {
+          res.statusCode = 500
+          res.end(JSON.stringify({ ok: false, error: (error && error.message) || String(error) }))
+        }
+      },
+    }), 'dsh-arya-maildesk: accounts route')
 
     // ---- compose routes (M3) -------------------------------------------
     // A draft is HARNESS DATA keyed by (account, mode, thread), so opening a

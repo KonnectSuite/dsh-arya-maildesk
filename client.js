@@ -270,6 +270,10 @@ window.__ModuleLoader__.load({
     '.md-move-row:hover{background:#f4f6fa}',
     '.md-search{width:170px;flex:none;font:inherit;font-size:12px;padding:4px 8px;border:1px solid #d8dde5;border-radius:7px;background:#fff}',
     '.md-confirm-content{max-height:120px;overflow:auto;background:#fafbfc;border:1px solid #e6e6e6;border-radius:8px;padding:8px;font-size:12px;line-height:1.45;color:#333}',
+    '.md-accounts{position:absolute;right:0;top:calc(100% + 6px);z-index:40;background:#fff;border:1px solid #e0e0e0;border-radius:10px;box-shadow:0 8px 24px #0000001a;padding:10px 12px;min-width:250px;display:flex;flex-direction:column;gap:6px}',
+    '.md-accounts-head{font-size:11px;text-transform:uppercase;letter-spacing:.5px;opacity:.55}',
+    '.md-acct{display:flex;align-items:center;gap:8px;font-size:12.5px;cursor:pointer;white-space:nowrap}',
+    '.md-accounts-note{font-size:11px;opacity:.6;margin-top:4px;max-width:250px;line-height:1.35}',
     '.md-ask-empty{opacity:.65;font-size:12px;line-height:1.45}',
     '.md-ask-err{color:#e5484d;font-size:12px}',
     '.md-ask-compose{display:flex;gap:8px;padding:8px 10px;align-items:flex-end}',
@@ -614,6 +618,9 @@ window.__ModuleLoader__.load({
       const [askBusy, setAskBusy] = React.useState(false)
       const [askError, setAskError] = React.useState('')
       const askEndRef = React.useRef(null)
+      // Which stores this panel shows. Hidden ones stay in Outlook.
+      const [accounts, setAccounts] = React.useState(null)
+      const [accountsOpen, setAccountsOpen] = React.useState(false)
       const [unreadOnly, setUnreadOnly] = React.useState(false)
       const [sort, setSort] = React.useState('received')
       const [limit, setLimit] = React.useState(100)
@@ -661,6 +668,23 @@ window.__ModuleLoader__.load({
       // plugin (one COM read per folder: 545 folders ≈ 16 s on a real Exchange
       // store), so the list must not wait for it. A folder NAME resolves inside
       // the bridge, so "Inbox" is enough to start.
+      // Only the well-known folders of each store (~1.4 s). Subfolders are
+      // fetched when a person expands one; the whole-tree walk was 16 s.
+      const loadFolders = async () => {
+        try {
+          const result = await call('list_folders', { roots: true })
+          const list = Array.isArray(result.folders) ? result.folders : []
+          setFolders(list)
+          if (list.length === 0) setListState((s) => (s === 'loading' ? 'empty' : s))
+          return list
+        } catch (error) {
+          // A failed folder walk must not blank a list that is already useful.
+          setFolders([])
+          announce('Folders could not be loaded: ' + error.message, true)
+          return []
+        }
+      }
+
       const boot = async () => {
         try {
           const res = await fetch(HEALTH_URL)
@@ -674,17 +698,42 @@ window.__ModuleLoader__.load({
         // Let the list effect dispatch its request before the folder walk takes
         // the bridge queue (the bridge handles one call at a time).
         await new Promise((resolve) => setTimeout(resolve, 60))
+        await loadFolders()
+        void loadAccounts()
+      }
+
+      // The accounts list names stores this panel is not showing, so a hidden
+      // one can always be switched back on.
+      const loadAccounts = async () => {
         try {
-          // Only the well-known folders of each store (~1.4 s). Subfolders are
-          // fetched when a person expands one; the whole-tree walk was 16 s.
-          const result = await call('list_folders', { roots: true })
-          const list = Array.isArray(result.folders) ? result.folders : []
-          setFolders(list)
-          if (list.length === 0) setListState((s) => (s === 'loading' ? 'empty' : s))
+          const res = await fetch('/maildesk/api/accounts')
+          const data = await res.json()
+          if (data !== null && data.ok === true) {
+            setAccounts({ stores: data.stores || [], hidden: data.hidden || [], visible: data.visible || [] })
+          }
+        } catch { /* the control simply does not appear */ }
+      }
+
+      const toggleAccount = async (store, hide) => {
+        try {
+          const res = await fetch('/maildesk/api/accounts', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ store, hidden: hide }),
+          })
+          const data = await res.json().catch(() => null)
+          if (data === null || data.ok !== true) throw new Error((data && data.error) || ('HTTP ' + res.status))
+          setAccounts({ stores: data.stores || [], hidden: data.hidden || [], visible: data.visible || [] })
+          const list = await loadFolders()
+          if (hide) {
+            const stillThere = list.some((f) => f.entryId === folderId || f.path === page.folderPath)
+            if (!stillThere) {
+              const firstInbox = list.find((f) => /^inbox$/i.test(f.name))
+              if (firstInbox !== undefined) setFolderId(firstInbox.entryId)
+            }
+          }
         } catch (error) {
-          // A failed folder walk must not blank a list that is already useful.
-          setFolders([])
-          announce('Folders could not be loaded: ' + error.message, true)
+          announce(error.message, true)
         }
       }
 
@@ -1577,6 +1626,28 @@ window.__ModuleLoader__.load({
             h('option', { value: '50' }, '50'),
             h('option', { value: '100' }, '100'),
             h('option', { value: '200' }, '200')),
+          accounts !== null && accounts.stores.length > 1
+            ? h('div', { style: { position: 'relative' } },
+                h('button', {
+                  className: 'md-btn' + (accountsOpen ? ' primary' : ''),
+                  type: 'button',
+                  title: 'Choose which Outlook accounts this panel shows',
+                  onClick: () => { setAccountsOpen((v) => !v); if (!accountsOpen) void loadAccounts() },
+                }, 'Accounts'),
+                accountsOpen
+                  ? h('div', { className: 'md-accounts' },
+                      h('div', { className: 'md-accounts-head' }, 'Accounts in Outlook'),
+                      accounts.stores.map((name) => h('label', { key: name, className: 'md-acct' },
+                        h('input', {
+                          type: 'checkbox',
+                          checked: !accounts.hidden.includes(name),
+                          onChange: (ev) => void toggleAccount(name, !ev.target.checked),
+                        }),
+                        h('span', null, name))),
+                      h('div', { className: 'md-accounts-note' },
+                        'Unchecked accounts stay in Outlook untouched; AryaCode just stops showing them.'))
+                  : null)
+            : null,
           h('button', {
             className: 'md-btn' + (askOpen ? ' primary' : ''),
             type: 'button',

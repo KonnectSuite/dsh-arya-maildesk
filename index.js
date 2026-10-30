@@ -1052,9 +1052,14 @@ export function apply(ctx) {
             )
             const records = page !== null && page !== undefined && Array.isArray(page.records) ? page.records : []
             const messages = []
+            // A turn opens with turn/start and closes with turn/end; the last of
+            // those markers in the page is what the drawer shows as "Working…".
+            let running = false
             for (const record of records) {
               const event = record !== null && record !== undefined ? record.event : null
               if (event === null || event === undefined) continue
+              if (event.type === 'turn/start') { running = true; continue }
+              if (event.type === 'turn/end') { running = false; continue }
               // Showing the tools makes the answer auditable: a person can see
               // it read the mailbox instead of trusting a sentence.
               if (event.type === 'tool/call') {
@@ -1062,15 +1067,28 @@ export function apply(ctx) {
                 const name = typeof data.name === 'string' ? data.name
                   : (typeof data.tool === 'string' ? data.tool
                     : (typeof data.toolName === 'string' ? data.toolName : ''))
-                if (name !== '') messages.push({ seq: event.seq, role: 'tool', text: name })
+                if (name !== '') {
+                  messages.push({
+                    seq: event.seq,
+                    role: 'tool',
+                    text: name,
+                    at: typeof event.time === 'number' ? (event.time < 1e12 ? event.time * 1000 : event.time) : null,
+                  })
+                }
                 continue
               }
               if (event.type !== 'user/message' && event.type !== 'assistant/message') continue
               // assistant/message carries data.message; user/message carries the
               // content on the event data itself in some builds, so accept both.
-              const text = textOfMessage(event.data && (event.data.message !== undefined ? event.data.message : event.data))
+              let text = textOfMessage(event.data && (event.data.message !== undefined ? event.data.message : event.data))
               if (text === '') continue
               if (event.type === 'user/message') {
+                // The prompt carries the panel's context as a trailing block so
+                // the agent knows which mail "this one" is. The person wrote the
+                // question, so the drawer shows only that part of the message.
+                const marker = text.indexOf('\n\n(mail panel')
+                if (marker > 0) text = text.slice(0, marker).trimEnd()
+                if (text === '') continue
                 if (looksLikeHarnessContext(text)) continue
                 // A message a person sent carries the rpc id the harness minted
                 // for it; the harness's own context injections do not. Keying on
@@ -1079,9 +1097,16 @@ export function apply(ctx) {
                 const source = event.data && event.data.source
                 if (source === null || typeof source !== 'object' || typeof source.rpcId !== 'string' || source.rpcId === '') continue
               }
-              messages.push({ seq: event.seq, role: event.type === 'user/message' ? 'user' : 'assistant', text })
+              messages.push({
+                seq: event.seq,
+                role: event.type === 'user/message' ? 'user' : 'assistant',
+                text,
+                // The wire time is epoch milliseconds; a build that reports
+                // seconds is normalised here so the drawer can print HH:mm.
+                at: typeof event.time === 'number' ? (event.time < 1e12 ? event.time * 1000 : event.time) : null,
+              })
             }
-            res.end(JSON.stringify({ ok: true, sessionId, messages }))
+            res.end(JSON.stringify({ ok: true, sessionId, messages, running }))
             return
           }
           const body = await readJsonBody(req, 64 * 1024)
@@ -1091,6 +1116,28 @@ export function apply(ctx) {
             return
           }
           const payload = body.value !== null && typeof body.value === 'object' ? body.value : {}
+          // Control actions from the drawer: start a fresh conversation, or
+          // stop the running turn. Both are about the one session this panel
+          // owns; neither touches the user's chat sessions.
+          if (payload.action === 'new') {
+            askState.sessionId = null
+            await createAskSession(controller)
+            res.end(JSON.stringify({ ok: true, sessionId: askState.sessionId }))
+            return
+          }
+          if (payload.action === 'cancel') {
+            if (askState.sessionId === null) {
+              res.end(JSON.stringify({ ok: true, cancelled: false }))
+              return
+            }
+            try {
+              await controller.cancel({ sessionId: askState.sessionId }, new AbortController().signal)
+              res.end(JSON.stringify({ ok: true, cancelled: true }))
+            } catch (error) {
+              res.end(JSON.stringify({ ok: false, error: (error && error.message) || String(error) }))
+            }
+            return
+          }
           const text = String(payload.text || '').trim()
           if (text === '') {
             res.statusCode = 400

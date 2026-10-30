@@ -24,32 +24,36 @@ rmSync(process.env.MAILDESK_STATE_FILE, { force: true })
 const plugin = await import('../index.js')
 
 const routes = new Map()
-const seen = { created: 0, prompts: [], events: 0 }
+const seen = { created: 0, prompts: [], events: 0, cancels: [] }
+
+// The transcript the stub returns; tests swap the turn markers to exercise
+// "running" without touching anything else.
+let records = [
+  { event: { seq: 1, type: 'user/message', time: 1793340000000, data: { source: { kind: 'user', rpcId: 'r-1' }, message: { content: [{ type: 'text', text: 'anything new?' }] } } } },
+  { event: { seq: 2, type: 'tool/call', time: 1793340001000, data: { name: 'maildesk_list_mail' } } },
+  { event: { seq: 3, type: 'assistant/message', time: 1793340002000, data: { message: { content: [{ type: 'text', text: 'Five unread.' }, { type: 'tool-call', id: 'x' }] } } } },
+  { event: { seq: 4, type: 'assistant/message', time: 1793340003000, data: { message: { content: [{ type: 'text', text: '   ' }] } } } },
+  // A harness context injection: a user-role message with no rpc id.
+  { event: { seq: 5, type: 'user/message', time: 1793340004000, data: { message: { content: [{ type: 'text', text: 'Current runtime context. This snapshot supersedes earlier ones.' }] } } } },
+  { event: { seq: 6, type: 'user/message', time: 1793340005000, data: { message: { content: [{ type: 'text', text: '<system-reminder>skills</system-reminder>' }] } } } },
+]
 
 const controller = {
   async create() {
     seen.created += 1
-    return { sessionId: 'sess-1' }
+    return { sessionId: 'sess-' + seen.created }
   },
   async prompt(request, signal) {
     seen.prompts.push({ request, signal })
     return { accepted: true }
   },
+  async cancel(request) {
+    seen.cancels.push(request)
+    return { cancelled: true }
+  },
   async events() {
     seen.events += 1
-    return {
-      cursor: 3,
-      hasMore: false,
-      records: [
-        { event: { seq: 1, type: 'user/message', data: { source: { kind: 'user', rpcId: 'r-1' }, message: { content: [{ type: 'text', text: 'anything new?' }] } } } },
-        { event: { seq: 2, type: 'tool/call', data: { name: 'maildesk_list_mail' } } },
-        { event: { seq: 3, type: 'assistant/message', data: { message: { content: [{ type: 'text', text: 'Five unread.' }, { type: 'tool-call', id: 'x' }] } } } },
-        { event: { seq: 4, type: 'assistant/message', data: { message: { content: [{ type: 'text', text: '   ' }] } } } },
-        // A harness context injection: a user-role message with no rpc id.
-        { event: { seq: 5, type: 'user/message', data: { message: { content: [{ type: 'text', text: 'Current runtime context. This snapshot supersedes earlier ones.' }] } } } },
-        { event: { seq: 6, type: 'user/message', data: { message: { content: [{ type: 'text', text: '<system-reminder>skills</system-reminder>' }] } } } },
-      ],
-    }
+    return { cursor: 3, hasMore: false, records };
   },
 }
 
@@ -141,6 +145,33 @@ function check(label, ok, detail) {
   check('roles are in order', r.json.messages[0].role === 'user' && r.json.messages[1].role === 'tool' && r.json.messages[2].role === 'assistant', JSON.stringify(r.json.messages.map((m) => m.role)))
   check('the tool row names the tool', r.json.messages[1].text === 'maildesk_list_mail', r.json.messages[1].text)
   check('the assistant text is the text block', r.json.messages[2].text === 'Five unread.', r.json.messages[2].text)
+}
+
+// 5. What the drawer adds: a time on every message, a running flag derived from
+//    the turn markers, and the two control actions.
+{
+  const r = await hit('GET')
+  check('GET reports the turn as finished', r.json.running === false, JSON.stringify(r.json.running))
+  check('every message carries a millisecond timestamp', r.json.messages.every((m) => typeof m.at === 'number' && m.at > 1e12), JSON.stringify(r.json.messages.map((m) => m.at)))
+
+  records = [{ event: { seq: 7, type: 'turn/start', time: 1793340010000, data: {} } }].concat(records)
+  const running = await hit('GET')
+  check('an open turn reads as running', running.json.running === true, JSON.stringify(running.json.running))
+  records = records.concat([{ event: { seq: 8, type: 'turn/end', time: 1793340011000, data: {} } }])
+  const finished = await hit('GET')
+  check('closing the turn clears the flag', finished.json.running === false)
+
+  const created = await hit('POST', { action: 'new' })
+  check('new starts a second session', created.json.ok === true && created.json.sessionId === 'sess-2' && seen.created === 2, JSON.stringify(created.json))
+  const afterNew = await hit('GET')
+  check('the transcript belongs to the new session', afterNew.json.sessionId === 'sess-2')
+
+  await hit('POST', { text: 'stop me' })
+  const cancelled = await hit('POST', { action: 'cancel' })
+  check('cancel reaches the controller for this session', cancelled.json.ok === true && seen.cancels.length === 1 && seen.cancels[0].sessionId === 'sess-2', JSON.stringify(seen.cancels))
+
+  const unknown = await hit('POST', { action: 'explode' })
+  check('an unknown action is refused', unknown.status === 400 && unknown.json.ok === false, JSON.stringify(unknown.json))
 }
 
 // 4. Transport edges: empty text, other methods, another origin.

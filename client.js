@@ -284,18 +284,54 @@ window.__ModuleLoader__.load({
         '.md-skel div:nth-child(1){width:34%}.md-skel div:nth-child(2){width:78%}.md-skel div:nth-child(3){width:60%;height:8px}',
         '.md-pager{display:flex;align-items:center;gap:8px;padding:8px 10px;border-top:1px solid var(--dsw-alias-border-subtle,#f0f0f0);font-size:11.5px;opacity:.8;flex:none}',
         '.md-kbd{font-size:10.5px;padding:1px 5px;border-radius:4px;border:1px solid var(--dsw-alias-border-subtle,#d9d9d9);background:#8898ac10}',
-        '.md-ask{border-top:1px solid var(--dsw-alias-border-subtle,#e6e6e6);background:#fafbfc;display:flex;flex-direction:column;max-height:46%;flex:none}',
-    '.md-ask-head{display:flex;align-items:center;gap:8px;padding:6px 10px;font-size:12px}',
-    '.md-ask-sub{opacity:.6;font-size:11px}',
-    '.md-ask-chips{display:flex;gap:6px;padding:0 10px 6px;flex-wrap:wrap}',
-    '.md-ask-chip{font:inherit;font-size:11.5px;padding:3px 9px;border-radius:12px;border:1px solid #d8dde5;background:#fff;cursor:pointer;color:inherit}',
-    '.md-ask-chip:hover:not(:disabled){background:#f2f5fb}',
+    // The assistant is a floating card over the panel body, not a band of the
+    // layout: the mail keeps its height, and the card can be parked anywhere.
+    '.md-ask-pill{position:absolute;right:18px;bottom:18px;z-index:5;display:flex;align-items:center;gap:8px;padding:9px 14px;border-radius:999px;border:1px solid var(--dsw-alias-border-subtle,#e2e4e9);background:var(--dsw-alias-bg-elevated,#fff);color:var(--dsw-alias-label-primary,#1b1b1b);font:inherit;font-size:12.5px;font-weight:600;cursor:pointer;box-shadow:0 10px 26px rgba(0,0,0,.16)}',
+    '.md-ask-pill:hover{background:var(--dsw-alias-interactive-bg-hover,#f3f5f9)}',
+    '.md-ask-dot{width:7px;height:7px;border-radius:50%;background:var(--dsw-alias-label-accent,#3b6ef5);animation:mdAskPulse 1.4s ease-in-out infinite}',
+    '@keyframes mdAskPulse{0%,100%{opacity:1}50%{opacity:.35}}',
+    '.md-ask-card{position:absolute;z-index:5;display:flex;flex-direction:column;min-width:360px;min-height:320px;border-radius:14px;border:1px solid var(--dsw-alias-border-subtle,#e2e4e9);background:var(--dsw-alias-bg-elevated,#fff);color:var(--dsw-alias-label-primary,#1b1b1b);box-shadow:0 20px 52px rgba(0,0,0,.24);overflow:hidden}',
+    '.md-ask-head{display:flex;align-items:center;gap:9px;padding:10px 12px;border-bottom:1px solid var(--dsw-alias-border-subtle,#ececec);cursor:grab;flex:none;user-select:none;touch-action:none}',
+    '.md-ask-head:active{cursor:grabbing}',
+    '.md-ask-avatar{width:26px;height:26px;border-radius:9px;display:flex;align-items:center;justify-content:center;background:var(--dsw-alias-label-accent,#3b6ef5);color:#fff;font-size:11.5px;font-weight:700;flex:none}',
+    '.md-ask-title{font-size:12.5px;font-weight:650;line-height:1.2}',
+    '.md-ask-status{font-size:10.5px;color:var(--dsw-alias-label-tertiary,#8a8f98);line-height:1.4}',
+    '.md-ask-body{flex:1 1 auto;min-height:0;overflow:auto;padding:12px 14px;display:flex;flex-direction:column;gap:12px}',
+    '.md-ask-row{display:flex;gap:8px;align-items:flex-start}',
+    '.md-ask-row.user{flex-direction:row-reverse;align-items:flex-end}',
+    '.md-ask-who{width:22px;height:22px;border-radius:7px;flex:none;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;background:var(--dsw-alias-bg-subtle,#eef1f6);color:var(--dsw-alias-label-secondary,#5a6069)}',
+    '.md-ask-msgwrap{display:flex;flex-direction:column;gap:3px;max-width:86%;min-width:0}',
+    '.md-ask-row.user .md-ask-msgwrap{align-items:flex-end}',
+    '.md-ask-bubble{font-size:13px;line-height:1.5;padding:8px 11px;border-radius:12px;white-space:pre-wrap;word-break:break-word}',
+    '.md-ask-row.user .md-ask-bubble{background:var(--dsw-alias-bg-subtle,#eef2ff);color:var(--dsw-alias-label-accent,#2350c9);border-bottom-right-radius:4px}',
+    '.md-ask-row.assistant .md-ask-bubble{padding:0;background:transparent;border-radius:0;white-space:normal}',
+    '.md-ask-meta{font-size:10.5px;color:var(--dsw-alias-label-tertiary,#8a8f98)}',
+    '.md-ask-code{font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-size:11.5px;padding:1px 4px;border-radius:4px;background:var(--dsw-alias-bg-subtle,#f1f3f7)}',
+    '.md-ask-pre{font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-size:11.5px;line-height:1.45;padding:8px 10px;border-radius:8px;background:var(--dsw-alias-bg-subtle,#f6f7fa);overflow:auto;margin:2px 0;white-space:pre}',
+    '.md-ask-gap{height:4px}',
+    '.md-ask-tool{align-self:flex-start;display:inline-flex;align-items:center;gap:7px;font-size:11.5px;color:var(--dsw-alias-label-secondary,#5a6069);padding:2px 0;cursor:pointer;background:none;border:0;font-family:inherit}',
+    '.md-ask-tool:hover{color:var(--dsw-alias-label-primary,#1b1b1b)}',
+    '.md-ask-tools{margin:2px 0 0 3px;padding-left:11px;border-left:2px solid var(--dsw-alias-border-subtle,#ececec);display:flex;flex-direction:column;gap:3px;font-size:11px;color:var(--dsw-alias-label-secondary,#5a6069)}',
+    '.md-ask-spin{width:9px;height:9px;border-radius:50%;border:2px solid var(--dsw-alias-border-subtle,#dfe3ea);border-top-color:var(--dsw-alias-label-accent,#3b6ef5);animation:mdAskSpin .7s linear infinite;flex:none}',
+    '@keyframes mdAskSpin{to{transform:rotate(360deg)}}',
+    '.md-ask-chips{display:flex;gap:6px;padding:0 14px 8px;flex-wrap:wrap;flex:none}',
+    '.md-ask-chip{font:inherit;font-size:11.5px;padding:4px 10px;border-radius:999px;border:1px solid var(--dsw-alias-border-subtle,#dfe3ea);background:transparent;cursor:pointer;color:inherit}',
+    '.md-ask-chip:hover:not(:disabled){background:var(--dsw-alias-interactive-bg-hover,#f3f5f9)}',
     '.md-ask-chip:disabled{opacity:.55;cursor:default}',
-    '.md-ask-log{overflow:auto;padding:6px 10px;display:flex;flex-direction:column;gap:6px;min-height:60px}',
-    '.md-ask-msg{padding:6px 9px;border-radius:8px;font-size:12.5px;white-space:pre-wrap;max-width:86%;line-height:1.4}',
-    '.md-ask-msg.user{align-self:flex-end;background:#3b6ef514;color:#2350c9}',
-    '.md-ask-msg.assistant{align-self:flex-start;background:#fff;border:1px solid #e6e6e6}',
-    '.md-ask-msg.tool{align-self:flex-start;background:transparent;border:1px dashed #d8dde5;color:#555;font-size:11.5px;padding:2px 7px}',
+    '.md-ask-ctxbar{display:flex;align-items:center;gap:6px;padding:0 14px 8px;flex:none;min-width:0}',
+    '.md-ask-ctx{display:inline-flex;align-items:center;gap:6px;font-size:11px;padding:3px 9px;border-radius:999px;background:var(--dsw-alias-bg-subtle,#f2f4f8);color:var(--dsw-alias-label-secondary,#5a6069);max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}',
+    '.md-ask-ctx button{border:0;background:none;cursor:pointer;color:inherit;font-size:12px;padding:0 0 0 2px}',
+    '.md-ask-compose{display:flex;gap:8px;padding:10px 12px 12px;align-items:flex-end;border-top:1px solid var(--dsw-alias-border-subtle,#ececec);flex:none}',
+    '.md-ask-input{flex:1 1 auto;max-height:128px;font:inherit;font-size:13px;line-height:1.45;padding:8px 11px;border:1px solid var(--dsw-alias-border-subtle,#d8dde5);border-radius:11px;resize:none;background:transparent;color:inherit;outline:none;overflow:auto}',
+    '.md-ask-input:focus{border-color:var(--dsw-alias-label-accent,#3b6ef5)}',
+    '.md-ask-send{width:34px;height:34px;border-radius:11px;border:0;cursor:pointer;display:flex;align-items:center;justify-content:center;background:var(--dsw-alias-label-accent,#3b6ef5);color:#fff;font-size:15px;flex:none}',
+    '.md-ask-send:disabled{opacity:.45;cursor:default}',
+    '.md-ask-grip{position:absolute;left:0;bottom:0;width:16px;height:16px;cursor:nesw-resize;touch-action:none}',
+    '.md-ask-grip::after{content:"";position:absolute;left:3px;bottom:3px;width:8px;height:8px;border-left:2px solid var(--dsw-alias-border-subtle,#cfd5de);border-bottom:2px solid var(--dsw-alias-border-subtle,#cfd5de);border-radius:2px}',
+    '.md-ask-sug{display:flex;flex-direction:column;gap:6px}',
+    '.md-ask-sug button{text-align:left;font:inherit;font-size:12px;padding:8px 10px;border-radius:10px;border:1px solid var(--dsw-alias-border-subtle,#e6e9ef);background:transparent;color:inherit;cursor:pointer}',
+    '.md-ask-sug button:hover{background:var(--dsw-alias-interactive-bg-hover,#f3f5f9)}',
+    '@media (max-width:900px){.md-ask-card{left:8px!important;right:8px!important;top:auto!important;bottom:8px!important;width:auto!important;height:62%!important;min-width:0}.md-ask-grip{display:none}}',
     '.md-move-list{max-height:300px;overflow:auto;border:1px solid #e6e6e6;border-radius:8px;margin:8px 0;background:#fff}',
     '.md-move-row{display:block;width:100%;text-align:left;padding:6px 9px;font-size:12px;background:none;border:0;border-bottom:1px solid #f2f2f2;cursor:pointer;color:inherit;font:inherit}',
     '.md-move-row:hover{background:#f4f6fa}',
@@ -322,10 +358,8 @@ window.__ModuleLoader__.load({
     '.md-tab.on{background:#fff;border-color:#e6e6e6;opacity:1;font-weight:600;margin-bottom:-1px}',
     '.md-nav-icon{position:relative;display:inline-flex;align-items:center;justify-content:center}',
     '.md-nav-badge{position:absolute;top:-5px;right:-7px;min-width:14px;height:14px;padding:0 3px;border-radius:7px;background:#e5484d;color:#fff;font-size:9.5px;line-height:14px;text-align:center;font-weight:600;box-shadow:0 0 0 2px var(--dsw-alias-bg-elevated,#fff)}',
-    '.md-ask-empty{opacity:.65;font-size:12px;line-height:1.45}',
-    '.md-ask-err{color:#e5484d;font-size:12px}',
-    '.md-ask-compose{display:flex;gap:8px;padding:8px 10px;align-items:flex-end}',
-    '.md-ask-input{flex:1 1 auto;font:inherit;font-size:12.5px;padding:6px 8px;border:1px solid #d8dde5;border-radius:8px;resize:vertical;background:#fff}',
+    '.md-ask-empty{opacity:.7;font-size:12px;line-height:1.5}',
+    '.md-ask-err{color:var(--dsw-alias-label-danger,#e5484d);font-size:12px}',
     '@media (max-width:900px){.md-rail{display:none}.md-list{flex-basis:46%}.md-read{min-width:0}}',
       ].join('\n')
       document.head.appendChild(style)
@@ -564,6 +598,72 @@ window.__ModuleLoader__.load({
         count > 0 ? h('span', { className: 'md-nav-badge', title: count + ' new since you last opened Mail' }, count > 99 ? '99+' : String(count)) : null)
     }
 
+    /* ------------------------------------------------------- rich answers */
+
+    // A small renderer for what the agent writes: paragraphs, bullets, bold,
+    // inline and fenced code, and links. Nothing from the model is ever
+    // interpreted as HTML; every node here is created explicitly.
+    function renderRich(text) {
+      const out = []
+      let list = null
+      let code = null
+
+      const flushList = () => {
+        if (list !== null) { out.push(h('ul', { key: 'ul' + out.length, style: { margin: '2px 0', paddingLeft: 18 } }, list)); list = null }
+      }
+
+      const inline = (line, base) => {
+        const nodes = []
+        const re = /(`[^`]+`|\*\*[^*]+\*\*|\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)|https?:\/\/[^\s)]+)/g
+        let last = 0
+        let match
+        while ((match = re.exec(line)) !== null) {
+          if (match.index > last) nodes.push(line.slice(last, match.index))
+          const token = match[0]
+          if (token.startsWith('`')) {
+            nodes.push(h('code', { key: base + '-c' + match.index, className: 'md-ask-code' }, token.slice(1, -1)))
+          } else if (token.startsWith('**')) {
+            nodes.push(h('b', { key: base + '-b' + match.index }, token.slice(2, -2)))
+          } else if (token.startsWith('[')) {
+            nodes.push(h('a', {
+              key: base + '-a' + match.index,
+              href: match[3], target: '_blank', rel: 'noreferrer noopener',
+            }, match[2]))
+          } else {
+            nodes.push(h('a', {
+              key: base + '-u' + match.index,
+              href: token, target: '_blank', rel: 'noreferrer noopener',
+            }, token))
+          }
+          last = match.index + token.length
+        }
+        if (last < line.length) nodes.push(line.slice(last))
+        return nodes
+      }
+
+      const lines = String(text === undefined || text === null ? '' : text).split('\n')
+      lines.forEach((line, index) => {
+        if (/^\s*```/.test(line)) {
+          if (code === null) { code = [] } else { out.push(h('pre', { key: 'pre' + out.length, className: 'md-ask-pre' }, code.join('\n'))); code = null }
+          return
+        }
+        if (code !== null) { code.push(line); return }
+        if (line.trim() === '') { flushList(); return }
+        const bullet = /^\s*[-*]\s+/.test(line)
+        const numbered = /^\s*\d+[.)]\s+/.test(line)
+        if (bullet || numbered) {
+          if (list === null) list = []
+          list.push(h('li', { key: 'li' + index }, inline(line.replace(/^\s*([-*]|\d+[.)])\s+/, ''), 'l' + index)))
+          return
+        }
+        flushList()
+        out.push(h('div', { key: 'p' + index, className: 'md-ask-p' }, inline(line, 'p' + index)))
+      })
+      flushList()
+      if (code !== null) out.push(h('pre', { key: 'pre' + out.length, className: 'md-ask-pre' }, code.join('\n')))
+      return out
+    }
+
     function NewMailRow(props) {
       const wide = props.wide !== false
       const [pending, setPending] = React.useState([])
@@ -719,6 +819,25 @@ window.__ModuleLoader__.load({
       const [askBusy, setAskBusy] = React.useState(false)
       const [askError, setAskError] = React.useState('')
       const askEndRef = React.useRef(null)
+      // "Working…" comes from the host's turn markers, so it clears even when
+      // the answer is short enough to arrive between two polls.
+      const [askRunning, setAskRunning] = React.useState(false)
+      const askRunningRef = React.useRef(false)
+      // Geometry of the floating card, persisted so it returns where it was.
+      const [askRect, setAskRect] = React.useState(() => {
+        try {
+          const raw = JSON.parse(localStorage.getItem('maildesk.askRect') || 'null')
+          if (raw !== null && typeof raw === 'object' && typeof raw.x === 'number' && typeof raw.w === 'number') return raw
+        } catch { /* first run */ }
+        return null
+      })
+      const [askIgnoreSelection, setAskIgnoreSelection] = React.useState(false)
+      const [askToolsOpen, setAskToolsOpen] = React.useState({})
+      const panelRef = React.useRef(null)
+      const askBodyRef = React.useRef(null)
+      const askInputRef = React.useRef(null)
+      const askDrag = React.useRef(null)
+      const askAtBottom = React.useRef(true)
       // Which stores this panel shows. Hidden ones stay in Outlook.
       const [accounts, setAccounts] = React.useState(null)
       const [accountsOpen, setAccountsOpen] = React.useState(false)
@@ -1236,6 +1355,18 @@ window.__ModuleLoader__.load({
       }
 
       const onKeyDown = (ev) => {
+        // Typing belongs to the field, not to the mailbox: without this, the
+        // letter u in the search box marks mail read and Delete deletes it.
+        const target = ev.target
+        if (target !== null && target !== undefined
+          && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable === true)) {
+          if (ev.key === 'Escape') {
+            ev.preventDefault()
+            setAskOpen(false)
+            if (typeof target.blur === 'function') target.blur()
+          }
+          return
+        }
         if (compose !== null) { if (ev.key === 'Escape') { ev.preventDefault(); setCompose(null) } return }
         if (ev.key === 'Delete' && !ev.repeat) { ev.preventDefault(); void doDelete(); return }
         if (ev.key === 'u' || ev.key === 'U') { void doMark(true); return }
@@ -1265,8 +1396,27 @@ window.__ModuleLoader__.load({
           const data = await res.json()
           if (data === null || data.ok !== true) return
           const list = Array.isArray(data.messages) ? data.messages : []
-          setAskLog(list.map((m) => ({ key: String(m.role) + String(m.seq), role: m.role, text: m.text })))
+          const mapped = list.map((m) => ({ key: String(m.role) + String(m.seq), role: m.role, text: m.text, at: m.at }))
+          setAskLog((prev) => {
+            // An optimistic bubble stays only until the host echoes the words;
+            // after that the transcript is the single source of truth.
+            const pending = prev.filter((m) => m.local === true && !mapped.some((x) => x.role === 'user' && x.text === m.text))
+            return pending.length === 0 ? mapped : mapped.concat(pending)
+          })
+          askRunningRef.current = data.running === true
+          setAskRunning(data.running === true)
         } catch { /* the poll retries */ }
+      }
+
+      const askPost = async (payload) => {
+        const res = await fetch('/maildesk/api/ask', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify(payload),
+        })
+        const data = await res.json().catch(() => null)
+        if (data === null || data.ok !== true) throw new Error((data && data.error) || ('HTTP ' + res.status))
+        return data
       }
 
       const askSend = async (textArg) => {
@@ -1274,22 +1424,16 @@ window.__ModuleLoader__.load({
         if (text === '' || askBusy) return
         setAskBusy(true)
         setAskError('')
+        // Show the question at once; the answer still comes from the host poll.
+        setAskLog((prev) => prev.concat([{ key: 'local-' + Date.now(), role: 'user', text, at: Date.now(), local: true }]))
+        setAskText('')
         try {
-          const res = await fetch('/maildesk/api/ask', {
-            method: 'POST',
-            headers: { 'content-type': 'application/json' },
-            body: JSON.stringify({
-              text,
-              folderPath: page.folderPath || '',
-              selected: openMail !== null && openMail.subject ? openMail.subject : '',
-              selectedId: openMail !== null && openMail.entryId ? openMail.entryId : '',
-            }),
+          await askPost({
+            text,
+            folderPath: page.folderPath || '',
+            selected: openMail !== null && openMail.subject ? openMail.subject : '',
+            selectedId: openMail !== null && openMail.entryId ? openMail.entryId : '',
           })
-          const data = await res.json().catch(() => null)
-          if (data === null || data.ok !== true) {
-            throw new Error((data && data.error) || ('HTTP ' + res.status))
-          }
-          setAskText('')
           await readAskLog()
         } catch (error) {
           setAskError(error && error.message ? error.message : String(error))
@@ -1298,8 +1442,30 @@ window.__ModuleLoader__.load({
         }
       }
 
-      // Poll while the pane is open: the agent answers asynchronously and the
-      // host owns the session, so a 1.5 s read keeps the two in step.
+      const stopAsk = async () => {
+        setAskError('')
+        try {
+          await askPost({ action: 'cancel' })
+          await readAskLog()
+        } catch (error) {
+          setAskError(error && error.message ? error.message : String(error))
+        }
+      }
+
+      const newAskChat = async () => {
+        setAskError('')
+        try {
+          await askPost({ action: 'new' })
+          setAskLog([])
+          setAskRunning(false)
+          askRunningRef.current = false
+        } catch (error) {
+          setAskError(error && error.message ? error.message : String(error))
+        }
+      }
+
+      // Poll while the card is open. 700 ms while a turn runs is fast enough to
+      // feel live without streaming; idle drops to 5 s.
       React.useEffect(() => {
         if (!askOpen) return undefined
         let live = true
@@ -1307,7 +1473,7 @@ window.__ModuleLoader__.load({
         const tick = async () => {
           if (!live) return
           await readAskLog()
-          if (live) timer = setTimeout(() => void tick(), 1500)
+          if (live) timer = setTimeout(() => void tick(), askRunningRef.current ? 700 : 5000)
         }
         void tick()
         return () => {
@@ -1316,9 +1482,27 @@ window.__ModuleLoader__.load({
         }
       }, [askOpen])
 
+      // Follow the newest message only when the reader is already at the end.
       React.useEffect(() => {
-        if (askOpen && askEndRef.current !== null) askEndRef.current.scrollIntoView({ block: 'end' })
-      }, [askOpen, askLog.length])
+        const el = askBodyRef.current
+        if (el !== null && (askAtBottom.current || askLog.length <= 2)) el.scrollTop = el.scrollHeight
+      }, [askLog, askOpen])
+
+      React.useEffect(() => {
+        if (askOpen && askInputRef.current !== null) askInputRef.current.focus()
+      }, [askOpen])
+
+      // Ctrl+J is the assistant's own door, from anywhere in the panel.
+      React.useEffect(() => {
+        const onKey = (ev) => {
+          if ((ev.ctrlKey || ev.metaKey) && !ev.shiftKey && !ev.altKey && String(ev.key).toLowerCase() === 'j') {
+            ev.preventDefault()
+            setAskOpen((v) => !v)
+          }
+        }
+        document.addEventListener('keydown', onKey)
+        return () => document.removeEventListener('keydown', onKey)
+      }, [])
 
       // Mirror the rail's shape and the open folder after every change, so the
       // next open shows the same tree without waiting on the bridge.
@@ -1662,48 +1846,227 @@ window.__ModuleLoader__.load({
             : null)
       })()
 
-      // The agent lives where the mail is: same page, same mailbox, no tab
-      // switching. It runs as a real harness session, so it keeps the full
-      // maildesk_* tool surface and the same confirmation gates as the chat.
-      const askDrawer = askOpen
-        ? h('div', { className: 'md-ask' },
-            h('div', { className: 'md-ask-head' },
-              h('b', null, 'Mail assistant'),
-              h('span', { className: 'md-ask-sub' }, 'same agent, same mail tools'),
-              h('span', { className: 'md-spacer' }),
-              h('button', { className: 'md-btn', type: 'button', onClick: () => setAskOpen(false) }, 'Close')),
-            // With a mail open, the three things people actually ask are one
-            // click away instead of typing the same sentence again.
-            openMail !== null
-              ? h('div', { className: 'md-ask-chips' },
-                  ['Summarize this mail', 'What does it want from me?', 'Draft a short reply'].map((q) => h('button', {
-                    key: q,
+      // The agent lives where the mail is, as a floating card over the panel:
+      // the mailbox keeps its height, and the card can be parked where it helps
+      // and remembers that spot. Same host route, same tools, same gates.
+      const ASK_MIN_W = 360
+      const ASK_MIN_H = 320
+      const saveAskRect = (rect) => { try { localStorage.setItem('maildesk.askRect', JSON.stringify(rect)) } catch { /* private mode */ } }
+      const clampAskRect = (rect, pw, ph) => {
+        const w = Math.max(ASK_MIN_W, Math.min(rect.w, Math.max(ASK_MIN_W, pw - 24)))
+        const h = Math.max(ASK_MIN_H, Math.min(rect.h, Math.max(ASK_MIN_H, ph - 24)))
+        return {
+          x: Math.max(8, Math.min(rect.x, pw - w - 8)),
+          y: Math.max(8, Math.min(rect.y, ph - h - 8)),
+          w,
+          h,
+        }
+      }
+      const defaultAskRect = (pw, ph) => {
+        const w = Math.min(420, Math.max(ASK_MIN_W, pw - 32))
+        const h = Math.min(540, Math.max(ASK_MIN_H, ph - 140))
+        return clampAskRect({ x: pw - w - 18, y: ph - h - 18, w, h }, pw, ph)
+      }
+      const panelSize = () => {
+        const el = panelRef.current
+        return el === null ? { pw: 1200, ph: 800 } : { pw: el.clientWidth, ph: el.clientHeight }
+      }
+
+      React.useEffect(() => {
+        if (!askOpen) return
+        const { pw, ph } = panelSize()
+        setAskRect((prev) => clampAskRect(prev === null ? defaultAskRect(pw, ph) : prev, pw, ph))
+      }, [askOpen])
+
+      React.useEffect(() => {
+        if (!askOpen) return undefined
+        const onResize = () => {
+          const { pw, ph } = panelSize()
+          setAskRect((prev) => (prev === null ? prev : clampAskRect(prev, pw, ph)))
+        }
+        window.addEventListener('resize', onResize)
+        return () => window.removeEventListener('resize', onResize)
+      }, [askOpen])
+
+      // Another mail means the old "ask about that one" dismissal no longer applies.
+      React.useEffect(() => { setAskIgnoreSelection(false) }, [openId])
+
+      const askPointerDown = (mode) => (ev) => {
+        if (ev.button !== 0) return
+        if (mode === 'move' && ev.target.closest('button') !== null) return
+        if (window.innerWidth <= 900) return
+        const { pw, ph } = panelSize()
+        askDrag.current = {
+          mode,
+          startX: ev.clientX,
+          startY: ev.clientY,
+          orig: askRect === null ? defaultAskRect(pw, ph) : askRect,
+          pw,
+          ph,
+        }
+        try { ev.currentTarget.setPointerCapture(ev.pointerId) } catch { /* older engines */ }
+        ev.preventDefault()
+      }
+
+      const askPointerMove = (ev) => {
+        const drag = askDrag.current
+        if (drag === null) return
+        const dx = ev.clientX - drag.startX
+        const dy = ev.clientY - drag.startY
+        const next = drag.mode === 'move'
+          ? { x: drag.orig.x + dx, y: drag.orig.y + dy, w: drag.orig.w, h: drag.orig.h }
+          : { x: drag.orig.x + dx, y: drag.orig.y, w: drag.orig.w - dx, h: drag.orig.h + dy }
+        setAskRect(clampAskRect(next, drag.pw, drag.ph))
+      }
+
+      const askPointerUp = () => {
+        const drag = askDrag.current
+        if (drag === null) return
+        askDrag.current = null
+        setAskRect((prev) => {
+          if (prev === null) return prev
+          const snapped = drag.mode === 'move'
+            ? clampAskRect({
+              x: prev.x + prev.w / 2 < drag.pw / 2 ? 16 : drag.pw - prev.w - 16,
+              y: prev.y + prev.h / 2 < drag.ph / 2 ? 16 : drag.ph - prev.h - 16,
+              w: prev.w,
+              h: prev.h,
+            }, drag.pw, drag.ph)
+            : prev
+          saveAskRect(snapped)
+          return snapped
+        })
+      }
+
+      const resetAskRect = () => {
+        const { pw, ph } = panelSize()
+        const rect = defaultAskRect(pw, ph)
+        setAskRect(rect)
+        saveAskRect(rect)
+      }
+
+      const askClock = (at) => {
+        if (typeof at !== 'number' || at <= 0) return ''
+        const d = new Date(at)
+        if (Number.isNaN(d.getTime())) return ''
+        return String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0')
+      }
+
+      const askItems = (() => {
+        const out = []
+        let i = 0
+        while (i < askLog.length) {
+          const item = askLog[i]
+          if (item.role === 'tool') {
+            const group = []
+            while (i < askLog.length && askLog[i].role === 'tool') { group.push(askLog[i]); i += 1 }
+            out.push({ kind: 'tools', key: 'tools-' + group[0].key, tools: group })
+            continue
+          }
+          out.push({ kind: 'msg', key: item.key, message: item })
+          i += 1
+        }
+        return out
+      })()
+
+      const askSuggestions = openMail !== null
+        ? ['Summarize this mail', 'What does it want from me?', 'Draft a short reply']
+        : ['What needs a reply today?', 'Summarize my unread mail', 'Find the invoices from this month']
+
+      const askThreadBody = h('div', {
+        className: 'md-ask-body',
+        ref: askBodyRef,
+        'aria-live': 'polite',
+        onScroll: (ev) => {
+          const el = ev.currentTarget
+          askAtBottom.current = el.scrollTop + el.clientHeight >= el.scrollHeight - 24
+        },
+      },
+        askLog.length === 0
+          ? h('div', null,
+              h('div', { className: 'md-ask-empty' }, 'Ask about this mailbox: summarize a thread, find what still needs an answer, file a message, or write the reply. Same agent as the chat, same mail tools; sending still asks you first.'),
+              h('div', { className: 'md-ask-sug', style: { marginTop: 10 } },
+                askSuggestions.map((q) => h('button', {
+                  key: q,
+                  type: 'button',
+                  disabled: askBusy || askRunning,
+                  onClick: () => void askSend(q),
+                }, q))))
+          : askItems.map((item) => (item.kind === 'tools'
+              ? h('div', { key: item.key },
+                  h('button', {
+                    className: 'md-ask-tool',
                     type: 'button',
-                    className: 'md-ask-chip',
-                    disabled: askBusy,
-                    onClick: () => { setAskText(q); void askSend(q) },
-                  }, q)))
+                    onClick: () => setAskToolsOpen((prev) => ({ ...prev, [item.key]: !prev[item.key] })),
+                  },
+                    askRunning ? h('span', { className: 'md-ask-spin' }) : null,
+                    item.tools.length + (item.tools.length === 1 ? ' step' : ' steps'),
+                    h('span', { style: { opacity: .55 } }, askToolsOpen[item.key] ? 'hide' : 'show')),
+                  askToolsOpen[item.key]
+                    ? h('div', { className: 'md-ask-tools' }, item.tools.map((tool) => h('div', { key: tool.key }, String(tool.text))))
+                    : null)
+              : h('div', { key: item.key, className: 'md-ask-row ' + item.message.role },
+                  h('div', { className: 'md-ask-who' }, item.message.role === 'user' ? 'You' : 'A'),
+                  h('div', { className: 'md-ask-msgwrap' },
+                    h('div', { className: 'md-ask-bubble' },
+                      item.message.role === 'user' ? String(item.message.text) : renderRich(item.message.text)),
+                    h('div', { className: 'md-ask-meta' },
+                      (item.message.role === 'user' ? 'You' : 'Arya')
+                      + (askClock(item.message.at) !== '' ? ' · ' + askClock(item.message.at) : '')
+                      + (item.message.local === true ? ' · sending' : '')))))),
+        askRunning && askLog.length > 0 ? h('div', { className: 'md-ask-tool' }, h('span', { className: 'md-ask-spin' }), 'Working…') : null,
+        askError !== '' ? h('div', { className: 'md-ask-err' }, askError) : null)
+
+      const askCard = askOpen && askRect !== null
+        ? h('div', {
+            className: 'md-ask-card',
+            style: { left: askRect.x + 'px', top: askRect.y + 'px', width: askRect.w + 'px', height: askRect.h + 'px' },
+            role: 'dialog',
+            'aria-label': 'Mail assistant',
+            onPointerMove: askPointerMove,
+            onPointerUp: askPointerUp,
+            onPointerCancel: askPointerUp,
+            onKeyDown: (ev) => {
+              if (ev.key === 'Escape') {
+                ev.stopPropagation()
+                setAskOpen(false)
+              }
+            },
+          },
+            h('div', {
+              className: 'md-ask-head',
+              onPointerDown: askPointerDown('move'),
+              onDoubleClick: resetAskRect,
+              title: 'Drag to move, double-click to reset',
+            },
+              h('div', { className: 'md-ask-avatar' }, 'A'),
+              h('div', null,
+                h('div', { className: 'md-ask-title' }, 'Mail assistant'),
+                h('div', { className: 'md-ask-status' }, askRunning ? 'Working…' : 'Ready')),
+              h('span', { className: 'md-spacer' }),
+              askRunning ? h('button', { className: 'md-btn', type: 'button', onClick: () => void stopAsk() }, 'Stop') : null,
+              h('button', { className: 'md-btn', type: 'button', title: 'Start a new conversation', onClick: () => void newAskChat() }, 'New'),
+              h('button', { className: 'md-btn', type: 'button', title: 'Collapse (Esc)', onClick: () => setAskOpen(false) }, '×')),
+            openMail !== null && !askIgnoreSelection
+              ? h('div', { className: 'md-ask-ctxbar' },
+                  h('span', { className: 'md-ask-ctx' },
+                    'About: ' + (openMail.subject || '(no subject)') + (thread !== null ? ' · ' + thread.messages.length + ' messages' : ''),
+                    h('button', { type: 'button', title: 'Ask without this mail', onClick: () => setAskIgnoreSelection(true) }, '×')))
               : null,
-            h('div', { className: 'md-ask-log' },
-              askLog.length === 0
-                ? h('div', { className: 'md-ask-empty' },
-                    'Ask about this mailbox — “summarize this thread”, “reply that Tuesday works”, “move this to Concur”. '
-                    + 'The assistant is the same agent as the chat, with the maildesk tools; anything sent still needs your confirmation.')
-                : askLog.map((m) => h('div', { key: m.key, className: 'md-ask-msg ' + m.role },
-                    m.role === 'tool'
-                      ? '⚙ ' + String(m.text)
-                      // The transcript is plain text; drop the two markers that
-                      // would otherwise show up literally in agent replies.
-                      : String(m.text).replace(/\*\*(.+?)\*\*/g, '$1').replace(/^#{1,6}\s+/gm, ''))),
-              askError !== '' ? h('div', { className: 'md-ask-err' }, askError) : null,
-              h('div', { ref: askEndRef })),
+            askThreadBody,
             h('div', { className: 'md-ask-compose' },
               h('textarea', {
                 className: 'md-ask-input',
-                placeholder: 'Ask the mail assistant…  (Enter to send, Shift+Enter for a new line)',
+                ref: askInputRef,
+                placeholder: 'Ask about your mail…',
                 value: askText,
-                rows: 2,
-                onChange: (ev) => setAskText(ev.target.value),
+                rows: 1,
+                onChange: (ev) => {
+                  setAskText(ev.target.value)
+                  const el = ev.currentTarget
+                  el.style.height = 'auto'
+                  el.style.height = Math.min(128, el.scrollHeight) + 'px'
+                },
                 onKeyDown: (ev) => {
                   if (ev.key === 'Enter' && !ev.shiftKey) {
                     ev.preventDefault()
@@ -1713,11 +2076,24 @@ window.__ModuleLoader__.load({
                 },
               }),
               h('button', {
-                className: 'md-btn primary',
+                className: 'md-ask-send',
                 type: 'button',
+                title: 'Send (Enter)',
                 disabled: askBusy || askText.trim() === '',
                 onClick: () => void askSend(),
-              }, askBusy ? 'Sending…' : 'Ask')))
+              }, askBusy ? '…' : '↑')),
+            h('div', { className: 'md-ask-grip', onPointerDown: askPointerDown('resize'), title: 'Resize' }))
+        : null
+
+      const askPill = !askOpen
+        ? h('button', {
+            className: 'md-ask-pill',
+            type: 'button',
+            title: 'Ask the mail assistant (Ctrl+J)',
+            onClick: () => setAskOpen(true),
+          },
+            'Ask',
+            askRunning ? h('span', { className: 'md-ask-dot' }) : null)
         : null
 
       // The rail is lazy, so the move picker owns its own tree: the folders a
@@ -1769,7 +2145,7 @@ window.__ModuleLoader__.load({
                 h('button', { className: 'md-btn', type: 'button', onClick: () => setMoveOpen(false) }, 'Cancel'))))
         : null
 
-      return h('div', { className: 'md', onKeyDown, tabIndex: -1 },
+      return h('div', { className: 'md', onKeyDown, tabIndex: -1, ref: panelRef },
         h('div', { className: 'md-top' },
           h('span', { className: 'md-title' }, 'Mail'),
           provider === 'fixture'
@@ -1901,7 +2277,8 @@ window.__ModuleLoader__.load({
                       : h('span', { key: 'end', style: { opacity: .6 } }, 'end of folder'),
                   ])),
           h('div', { className: 'md-read' }, reader)),
-        askDrawer,
+        askCard,
+        askPill,
         moveDialog,
         composeView,
         toast !== null ? h('div', { className: 'md-toast', style: toast.isError ? { color: 'var(--dsw-alias-label-danger,#e5484d)' } : undefined, role: 'status' }, toast.text) : null)

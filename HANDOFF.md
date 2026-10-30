@@ -367,9 +367,9 @@ Open:
 
 1. **Publish 1.0.4** (npm credentials are needed on this machine — none are present), then the catalogue entry and
    the GitHub release. The build is otherwise ready: tests green, the tarball installs, these notes are current.
-2. **Stream the panel agent** instead of the 1.5 s poll, and give it a "new conversation" control. The rest of it
-   is done: its session persists, the transcript names every tool it calls, and the selected mail travels as an
-   `entryId`.
+2. **Stream the panel agent** so answers type out. Polling is 700 ms while a turn runs and 5 s idle; the drawer already
+   knows `running`, has Stop and New, timestamps, markdown and grouped tool steps. True streaming needs an SSE bridge
+   over `sessionQuery.observeSession` — the one piece deliberately left out of the floating-card pass.
 3. **The remaining Outlook-isms**: sort by conversation, unread counts per thread, "show only this conversation",
    and a configurable reading-pane position.
 4. A morning-brief prompt/tool built on `list_mail` + `read_mail` — daily value with no new UI.

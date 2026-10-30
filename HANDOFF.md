@@ -41,8 +41,9 @@ Two halves, one package:
 | `cordis.patch.yml` | bundle | the host-plane row that mounts `index.js` |
 
 Registration surface (all published APIs, no harness edits): `main` key `mail`, `sidebar.panellist` id
-`mail`, `sidebar.footer.action` id `newmail-badge`, `tool.call.toolview` key `maildesk_compose`,
-`sidebarRightTabs` type `maildesk-draft` + `sidebar.right.pane.tab` key `dsh-arya-maildesk:draft`.
+`mail` (its icon carries the new-arrival badge; the `sidebar.footer.action` chip was removed), `tool.call.toolview`
+key `maildesk_compose`, `sidebarRightTabs` type `maildesk-draft` + `sidebar.right.pane.tab` key
+`dsh-arya-maildesk:draft`.
 Routes: `GET /maildesk/api/health`, `GET|POST /maildesk/api/ask`, `GET|POST /maildesk/api/accounts`; `POST /maildesk/api/call`,
 `/maildesk/api/draft`, `/maildesk/api/send`, `/maildesk/api/fixture` — all same-origin, request bodies capped at 256 KB.
 

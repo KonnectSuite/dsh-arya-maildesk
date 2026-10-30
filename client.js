@@ -28,6 +28,37 @@ window.__ModuleLoader__.load({
     const h = React.createElement
 
     const STATE_URL = '/olk-notify/api/state'
+    // New-mail badge for the Mail row itself: how many arrived since the panel
+    // was last open, not how many are unread in the folder.
+    const newMail = {
+      seenAt: (() => {
+        try {
+          const v = Number(localStorage.getItem('maildesk.newMailSeenAt') || 0)
+          return Number.isFinite(v) && v > 0 ? v : 0
+        } catch { return 0 }
+      })(),
+      open: false,
+      baseline: 0,
+      count: 0,
+      listeners: new Set(),
+    }
+    const pad2 = (n) => String(n).padStart(2, '0')
+    const stampOf = (ms) => {
+      const d = new Date(ms)
+      return d.getFullYear() + '-' + pad2(d.getMonth() + 1) + '-' + pad2(d.getDate()) + ' ' + pad2(d.getHours()) + ':' + pad2(d.getMinutes())
+    }
+    const setNewMailCount = (n) => {
+      newMail.count = n
+      for (const fn of newMail.listeners) {
+        try { fn(n) } catch { /* a listener must not break the others */ }
+      }
+    }
+    const markMailSeen = () => {
+      newMail.seenAt = Date.now()
+      newMail.baseline = 0
+      try { localStorage.setItem('maildesk.newMailSeenAt', String(newMail.seenAt)) } catch { /* private mode */ }
+      setNewMailCount(0)
+    }
     const CALL_URL = '/maildesk/api/call'
     const HEALTH_URL = '/maildesk/api/health'
     // First paint resolves the default Inbox by NAME, before the folder tree is
@@ -289,6 +320,8 @@ window.__ModuleLoader__.load({
     '.md-tabs{display:flex;gap:4px;padding:6px 8px 0;border-bottom:1px solid #ececec;flex:none}',
     '.md-tab{font:inherit;font-size:12px;padding:4px 10px;border-radius:7px 7px 0 0;border:1px solid transparent;border-bottom:0;background:none;color:inherit;cursor:pointer;opacity:.7}',
     '.md-tab.on{background:#fff;border-color:#e6e6e6;opacity:1;font-weight:600;margin-bottom:-1px}',
+    '.md-nav-icon{position:relative;display:inline-flex;align-items:center;justify-content:center}',
+    '.md-nav-badge{position:absolute;top:-5px;right:-7px;min-width:14px;height:14px;padding:0 3px;border-radius:7px;background:#e5484d;color:#fff;font-size:9.5px;line-height:14px;text-align:center;font-weight:600;box-shadow:0 0 0 2px var(--dsw-alias-bg-elevated,#fff)}',
     '.md-ask-empty{opacity:.65;font-size:12px;line-height:1.45}',
     '.md-ask-err{color:#e5484d;font-size:12px}',
     '.md-ask-compose{display:flex;gap:8px;padding:8px 10px;align-items:flex-end}',
@@ -484,6 +517,52 @@ window.__ModuleLoader__.load({
     }
 
     /* ---------------------------------------------------------- badge surface */
+
+    // The Mail row in the sidebar carries the count. It asks the host for the
+    // arrivals since the panel was last open — one search at mount covers mail
+    // that landed while AryaCode was closed, and the watcher covers the rest.
+    function MailPanelIcon(props) {
+      const size = props && props.wide === false ? 18 : 16
+      const [count, setCount] = React.useState(newMail.count)
+
+      React.useEffect(() => {
+        newMail.listeners.add(setCount)
+        return () => { newMail.listeners.delete(setCount) }
+      }, [])
+
+      React.useEffect(() => {
+        let live = true
+        const readPending = async () => {
+          if (!live) return
+          if (newMail.open) { setNewMailCount(0); return }
+          const seenText = newMail.seenAt > 0 ? stampOf(newMail.seenAt) : ''
+          let n = 0
+          try {
+            const res = await fetch(STATE_URL)
+            const data = await res.json()
+            const pending = Array.isArray(data.pending) ? data.pending : []
+            n = pending.filter((m) => String(m.received || '') > seenText).length
+          } catch { /* host route not up yet */ }
+          if (live) setNewMailCount(Math.max(newMail.baseline, n))
+        }
+        const load = async () => {
+          if (newMail.seenAt > 0 && !newMail.open) {
+            try {
+              const r = await call('search_mail', { dateFrom: stampOf(newMail.seenAt), limit: 50 })
+              newMail.baseline = Array.isArray(r.mails) ? r.mails.length : 0
+            } catch { newMail.baseline = 0 }
+          }
+          await readPending()
+        }
+        void load()
+        const timer = setInterval(() => { void readPending() }, POLL_MS)
+        return () => { live = false; clearInterval(timer) }
+      }, [])
+
+      return h('span', { className: 'md-nav-icon' },
+        h(MailIcon, { size }),
+        count > 0 ? h('span', { className: 'md-nav-badge', title: count + ' new since you last opened Mail' }, count > 99 ? '99+' : String(count)) : null)
+    }
 
     function NewMailRow(props) {
       const wide = props.wide !== false
@@ -783,6 +862,18 @@ window.__ModuleLoader__.load({
       }
 
       React.useEffect(() => { void boot() }, [])
+
+      // Opening Mail counts as seeing it: the row's badge is for arrivals since
+      // the last open, so it starts at zero here and only grows while the panel
+      // is closed.
+      React.useEffect(() => {
+        newMail.open = true
+        markMailSeen()
+        return () => {
+          newMail.open = false
+          markMailSeen()
+        }
+      }, [])
 
       React.useEffect(() => {
         if (folderId === null) return
@@ -2197,12 +2288,7 @@ window.__ModuleLoader__.load({
         }
         ctx.slots.inject('sidebar.panellist', () => ctx.slots.register(
           { name: 'sidebar.panellist', id: 'mail', order: -6, label: 'Mail' },
-          (props) => h(MailIcon, { size: props && props.wide === false ? 18 : 16 }),
-        ))
-        // The doorbell: new arrivals only.
-        ctx.slots.inject('sidebar.footer.action', () => ctx.slots.register(
-          { name: 'sidebar.footer.action', id: 'newmail-badge', order: 10, label: 'New mail' },
-          (props) => h(NewMailRow, props),
+          (props) => h(MailPanelIcon, props),
         ))
       },
     }

@@ -1,4 +1,4 @@
-﻿# HANDOFF — dsh-arya-maildesk
+# HANDOFF — dsh-arya-maildesk
 
 State of the published release, what was verified, what is still open, and how to continue on a machine
 that actually has classic Outlook. Keep this current when a version ships.
@@ -12,8 +12,8 @@ that actually has classic Outlook. Keep this current when a version ships.
 | Repository | `KonnectSuite/dsh-arya-maildesk` (public) |
 | Built from commit | see `git log -1 --format=%h` at the time of publishing (1.0.3: sample mailbox toggle) |
 | Published tarball | `https://registry.npmjs.org/@aryacode/dsh-arya-maildesk/-/dsh-arya-maildesk-1.0.3.tgz` |
-| sha256 | `e2568c63d1104721fffd9a5a7e3666675bbecb5a25e7b04cf1a3a745e8dad579` (85,629 bytes) |
-| npm shasum | `b4cafd334ef7ab164fbb4cbc6dbbf79f83ec86c2` |
+| sha256 | `1b1be6b2667410ce7bc3bf6440b50f9233dc18c87ff7b3562a466d01736b2f5d` (85,872 bytes) |
+| npm shasum | `426103d47383a11976a81bc6b118bf97410c75da` |
 | GitHub release | `https://github.com/KonnectSuite/dsh-arya-maildesk/releases/tag/v1.0.3` |
 | Host requirement | `dsh.engines.dsh`: `^0.2.1-rc.3 \|\| >=0.2.2-alpha.2` |
 | Licence | MIT (fork of `UnknowCao/dsh-outlook` @ `5a2ec7d`; see `NOTICE`) |

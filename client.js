@@ -16,7 +16,12 @@
  * whose factory receives `require` for kernel-provided modules.
  */
 window.__ModuleLoader__.load({
-  id: 'dsh-arya-maildesk',
+  // Must be the package's own name, scope included: the module table keys every
+  // bundle by package name, so an unscoped id here registers this module under a
+  // name nothing imports and the web boot fails with
+  // `client-modules: could not load "@aryacode/dsh-arya-maildesk"`.
+  // test/bundle.test.mjs enforces this.
+  id: '@aryacode/dsh-arya-maildesk',
   factory: (require) => {
     const React = require('react')
     const ReactDOM = require('react-dom')

@@ -2,6 +2,19 @@
 
 This project's version narrative puts **why** before **what**. Every entry starts with the motivation.
 
+## 1.0.2 — The browser bundle named itself by an old name too
+
+**Why**: 1.0.1 fixed the bundle patch and still broke the app. Installing it on a machine with the packaged tarball produced, at web boot, `web boot: 1 entry did not activate @aryacode/dsh-arya-maildesk: import failed: client-modules: could not load "@aryacode/dsh-arya-maildesk"` — the host half registered all 24 tools and the window never appeared. Same mistake as 1.0.0, one layer down: `client.js` called `window.__ModuleLoader__.load({ id: 'dsh-arya-maildesk' })`, unscoped, while the module table keys every client bundle by **package name**. The module therefore registered under a name nothing imports. It passed every test and every development run for the same reason 1.0.0 did: the dev profile links this repository under the unscoped name, so the stale id resolved by luck, and the packed tarball is the first install that ever disagreed with it.
+
+**What changed**:
+- `client.js` registers under `id: '@aryacode/dsh-arya-maildesk'`, with a comment naming the failure it prevents.
+- `test/bundle.test.mjs` grew to **15 checks**: the bundle's declared module id must equal `package.json`'s `name`. Replaying 1.0.1's `client.js` through it fails on exactly that line.
+- Verified against the real thing: the dev profile was switched from the linked repository to the published tarball, which reproduced the failure verbatim, and 1.0.2 boots with the Mail row, the panel and the badge present.
+
+The lesson is now written down twice in the same file: anything the loader reads **by name** — the patch row and the module id — needs an assertion, because neither is exercised by running the code.
+
+---
+
 ## 1.0.1 — The bundle named a package that did not exist
 
 **Why**: 1.0.0 installed cleanly on a work laptop and then refused to activate, with `outlook (dsh-arya-maildesk): failed to import: Error [ERR_MODULE_NOT_FOUND]: Cannot find package 'dsh-arya-maildesk'`. The bundle patch still named the package **unscoped** — a leftover of the rename to `@aryacode/dsh-arya-maildesk`. The loader resolves that string with `import()`, so the tarball could be present, correct, digest-verified and still not mount. It never showed up in development because the dev profile links this repository under the *unscoped* name, which made the stale string resolve by luck. Nothing about Outlook, COM or the market was wrong; the package simply called itself by an old name.

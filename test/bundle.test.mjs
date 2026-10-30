@@ -56,6 +56,23 @@ for (const rel of entryPoints) {
 //    nor block and installs onto hosts we never meant to support.
 check('dsh.engines.dsh is declared', typeof pkg.dsh?.engines?.dsh === 'string' && pkg.dsh.engines.dsh.length > 0)
 
+// 5. The browser bundle registers itself under an id, and the module table keys
+//    every client bundle by package name. An unscoped id therefore registers
+//    this module where nothing looks for it: the host half loads, the panel never
+//    appears, and the web boot fails with
+//    `client-modules: could not load "<name>"`. That shipped in 1.0.1 because the
+//    dev profile linked the repository under the unscoped name, so the stale id
+//    resolved by luck. Same class of bug as the patch row above, one layer down.
+const clientPath = join(root, 'client.js')
+if (existsSync(clientPath)) {
+  const bundle = readFileSync(clientPath, 'utf8')
+  const ids = [...bundle.matchAll(/__ModuleLoader__\.load\(\s*\{[^}]*?\bid:\s*['"]([^'"]+)['"]/g)].map((m) => m[1])
+  check('client bundle declares a module id', ids.length > 0)
+  for (const id of ids) {
+    check(`client module id is the package name (${id})`, id === pkg.name, `expected ${pkg.name}`)
+  }
+}
+
 console.log('')
 if (failures > 0) {
   console.log(`FAILED: ${failures} of ${checks} checks`)

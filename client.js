@@ -984,6 +984,29 @@ window.__ModuleLoader__.load({
       }
 
       // Flip the host between the sample mailbox and live COM, then reload.
+      // Flip the host between the sample mailbox and live COM, then reload.
+      // The view is wiped first: switching providers must never leave one
+      // mailbox's rows on screen under the other one's header. Leaving "Back to
+      // live mail" with the sample's 48 rows still listed, beneath a banner that
+      // says no Outlook answered, is the worst possible reading — mail that looks
+      // real and is not.
+      const resetMailboxView = () => {
+        setPage({ total: 0, offset: 0, returned: 0, folderPath: '', mails: [], unreadInFolder: -1 })
+        setSel([])
+        setOpenId(null)
+        setOpenMail(null)
+        setThread(null)
+        setThreadBodies({})
+        setSearchText('')
+        setSubmittedSearch('')
+        setSearchRows(null)
+        setKids({})
+        setOpenFolders({})
+        setFolderId(null)
+        setListState('loading')
+        setError('')
+      }
+
       const switchSampleMail = async (on) => {
         setBusy('sample')
         try {
@@ -994,9 +1017,7 @@ window.__ModuleLoader__.load({
           })
           const data = await res.json()
           if (!data || data.ok !== true) throw new Error((data && data.error) || 'the provider did not switch')
-          setError('')
-          setFolderId(null)
-          setListState('loading')
+          resetMailboxView()
           await boot()
           announce(on ? 'Showing sample mail — nothing here is real' : 'Back to live mail', false)
         } catch (error) {

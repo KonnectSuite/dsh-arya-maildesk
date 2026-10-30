@@ -259,6 +259,9 @@ window.__ModuleLoader__.load({
     '.md-ask-msg.user{align-self:flex-end;background:#3b6ef514;color:#2350c9}',
     '.md-ask-msg.assistant{align-self:flex-start;background:#fff;border:1px solid #e6e6e6}',
     '.md-ask-msg.tool{align-self:flex-start;background:transparent;border:1px dashed #d8dde5;color:#555;font-size:11.5px;padding:2px 7px}',
+    '.md-move-list{max-height:300px;overflow:auto;border:1px solid #e6e6e6;border-radius:8px;margin:8px 0;background:#fff}',
+    '.md-move-row{display:block;width:100%;text-align:left;padding:6px 9px;font-size:12px;background:none;border:0;border-bottom:1px solid #f2f2f2;cursor:pointer;color:inherit;font:inherit}',
+    '.md-move-row:hover{background:#f4f6fa}',
     '.md-ask-empty{opacity:.65;font-size:12px;line-height:1.45}',
     '.md-ask-err{color:#e5484d;font-size:12px}',
     '.md-ask-compose{display:flex;gap:8px;padding:8px 10px;align-items:flex-end}',
@@ -598,7 +601,13 @@ window.__ModuleLoader__.load({
       const [limit, setLimit] = React.useState(100)
       const [provider, setProvider] = React.useState('com')
       const [sample, setSample] = React.useState(false)
-      const [moveTo, setMoveTo] = React.useState('')
+      // Move targets are their own thing now: the rail is lazy, so the picker
+      // can load the whole tree once (cached host-side) instead of offering
+      // only the folders a person happened to expand.
+      const [moveOpen, setMoveOpen] = React.useState(false)
+      const [moveFilter, setMoveFilter] = React.useState('')
+      const [allFolders, setAllFolders] = React.useState(null)
+      const [moveBusy, setMoveBusy] = React.useState(false)
       // The composer is a draft the HOST owns (see index.js compose routes):
       // this component only edits it and asks for a send. Nothing here creates
       // an Outlook item, so re-opening a reply cannot stack a second draft.
@@ -855,19 +864,19 @@ window.__ModuleLoader__.load({
         }
       }
 
-      const doMove = async () => {
+      const moveSelection = async (destId) => {
         const ids = targetIds()
-        if (ids.length === 0 || moveTo === '') return
+        if (ids.length === 0 || !destId) return
         setBusy('move')
         try {
-          const result = await call('move_mail', { entryIds: ids, destFolder: moveTo })
+          const result = await call('move_mail', { entryIds: ids, destFolder: destId })
           if (Array.isArray(result.failed) && result.failed.length > 0) {
             announce(result.failed.length + ' could not be moved: ' + result.failed[0].error, true)
           } else {
             announce('Moved ' + (result.moved || ids.length) + ' to ' + (result.destPath || 'folder'))
           }
           setSel([])
-          setMoveTo('')
+          setMoveOpen(false)
           if (openId !== null && ids.includes(openId)) { setOpenId(null); setOpenMail(null); setReadState('idle') }
           await refresh()
         } catch (error) {
@@ -1195,16 +1204,7 @@ window.__ModuleLoader__.load({
         h('button', { className: 'md-btn primary', type: 'button', disabled: busy !== '' || selectionCount === 0, onClick: () => void doMark(true) }, 'Mark read'),
         h('button', { className: 'md-btn', type: 'button', disabled: busy !== '' || selectionCount === 0, onClick: () => void doMark(false) }, 'Mark unread'),
         h('button', { className: 'md-btn danger', type: 'button', disabled: busy !== '' || selectionCount === 0, onClick: () => void doDelete() }, 'Delete'),
-        h('select', {
-          className: 'md-select',
-          value: moveTo,
-          disabled: busy !== '' || selectionCount === 0,
-          title: 'Move the selection to a folder',
-          onChange: (ev) => setMoveTo(ev.target.value),
-        },
-          h('option', { value: '' }, 'Move to…'),
-          (flatFolders).map((f) => h('option', { key: f.entryId, value: f.entryId }, '  '.repeat(f.depth || 0) + f.name))),
-        h('button', { className: 'md-btn', type: 'button', disabled: busy !== '' || moveTo === '' || selectionCount === 0, onClick: () => void doMove() }, 'Go'),
+        h('button', { className: 'md-btn', type: 'button', disabled: busy !== '' || selectionCount === 0, title: 'Move the selection to a folder', onClick: () => { setMoveFilter(''); setMoveOpen(true) } }, 'Move to...'),
         h('button', { className: 'md-btn', type: 'button', disabled: busy !== '' || selectionCount === 0, onClick: () => void doOpenInOutlook() }, 'Open in Outlook'),
         h('button', { className: 'md-btn', type: 'button', disabled: busy !== '' || selectionCount !== 1, onClick: () => void openCompose('reply') }, 'Reply'),
         h('button', { className: 'md-btn', type: 'button', disabled: busy !== '' || selectionCount !== 1, onClick: () => void openCompose('replyAll') }, 'Reply all'),
@@ -1388,6 +1388,55 @@ window.__ModuleLoader__.load({
               }, askBusy ? 'Sending…' : 'Ask')))
         : null
 
+      // The rail is lazy, so the move picker owns its own tree: the folders a
+      // person has opened, plus a button that loads the whole mailbox once
+      // (cached host-side, so it is slow at most once per five minutes).
+      const loadAllFolders = async () => {
+        if (allFolders !== null || moveBusy) return
+        setMoveBusy(true)
+        try {
+          const result = await call('list_folders', { maxDepth: 6 })
+          setAllFolders(Array.isArray(result.folders) ? result.folders : [])
+        } catch (error) {
+          announce(error.message, true)
+        } finally {
+          setMoveBusy(false)
+        }
+      }
+
+      const moveQuery = moveFilter.trim().toLowerCase()
+      const moveCandidates = (allFolders !== null ? allFolders : flatFolders).filter((f) =>
+        moveQuery === '' || String(f.path || f.name || '').toLowerCase().includes(moveQuery))
+
+      const moveDialog = moveOpen
+        ? h('div', { className: 'md-modal' },
+            h('div', { className: 'md-modal-card', role: 'dialog', 'aria-label': 'Move to folder' },
+              h('h3', null, 'Move ' + selectionCount + ' to a folder'),
+              h('input', {
+                className: 'md-ask-input',
+                placeholder: 'Filter folders — a name or a path',
+                value: moveFilter,
+                onChange: (ev) => setMoveFilter(ev.target.value),
+              }),
+              allFolders === null
+                ? h('div', { style: { margin: '8px 0', display: 'flex', alignItems: 'center', gap: 8 } },
+                    h('button', { className: 'md-btn', type: 'button', disabled: moveBusy, onClick: () => void loadAllFolders() },
+                      moveBusy ? 'Loading every folder…' : 'Load every folder'),
+                    h('span', { className: 'md-ask-sub' }, 'otherwise only folders you have opened are listed'))
+                : null,
+              h('div', { className: 'md-move-list' },
+                moveCandidates.slice(0, 400).map((f) => h('button', {
+                  key: f.entryId,
+                  type: 'button',
+                  className: 'md-move-row',
+                  title: f.path,
+                  onClick: () => void moveSelection(f.entryId),
+                }, f.path || f.name))),
+              moveCandidates.length === 0 ? h('div', { className: 'md-ask-empty' }, 'No folder matches that filter.') : null,
+              h('div', { className: 'md-compose-actions', style: { borderTop: 0 } },
+                h('button', { className: 'md-btn', type: 'button', onClick: () => setMoveOpen(false) }, 'Cancel'))))
+        : null
+
       return h('div', { className: 'md', onKeyDown, tabIndex: -1 },
         h('div', { className: 'md-top' },
           h('span', { className: 'md-title' }, 'Mail'),
@@ -1458,6 +1507,7 @@ window.__ModuleLoader__.load({
                   ])),
           h('div', { className: 'md-read' }, reader)),
         askDrawer,
+        moveDialog,
         composeView,
         toast !== null ? h('div', { className: 'md-toast', style: toast.isError ? { color: 'var(--dsw-alias-label-danger,#e5484d)' } : undefined, role: 'status' }, toast.text) : null)
     }

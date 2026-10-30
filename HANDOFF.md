@@ -73,6 +73,9 @@ list. The host route is `/maildesk/api/ask`; the client never talks to a model i
 so the conversation survives a reload, the transcript names the tools it calls, and the question carries the
 selected mail's `entryId`, so "reply to this one" resolves without a search.
 
+`Move to…` is a picker of its own now, because the lazy rail only knew the folders a person had expanded: it
+filters by path and can load the whole tree on demand (one slow walk, cached).
+
 That session also found and fixed the reason the panel looked broken: the first paint waited for a whole-mailbox
 folder walk (545 folders, 16 s) before it asked for any mail, so "opening Mail" meant ~24 s of skeleton rows. The
 panel now paints the message list first and grows the folder rail lazily — **first mail in 3 s, rail in 1.5 s, one
@@ -267,9 +270,8 @@ silently.
 
 ## Known gaps
 
-1. **No move, delete or send has touched a real mailbox.** Reads, mark-read and the reply composer pass (rungs 1–5
-   and 8); `move_mail`, `delete_mail` and `send` are still synthetic-only, and the send gate has never seen a real
-   recipient.
+1. **No send has touched a real mailbox.** Reads, mark-read, move, delete and the reply composer pass (rungs 1–8);
+   `send` is still synthetic-only, and the send gate has never seen a real recipient.
 2. **User-visible strings are English only.** No locale layer, no `locale/*.json`. Deliberate deviation from
    the market's localisation gate, recorded rather than hidden; first item for 1.1.0.
 3. **`TESTCASES.md`'s 49 cases were inherited** and run by upstream's author. Post-fork actions have no case

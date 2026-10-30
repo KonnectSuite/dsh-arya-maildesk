@@ -95,11 +95,15 @@ on the real mailbox, the rest have not:
 | No classic Outlook | the panel names the reason instead of reporting zero mail (`docs/panel-new-outlook.png`) |
 | Sample mailbox | `SAMPLE MAIL` pill, **Preview with sample mail** / **Back to live mail**, whole mailbox on a PC with no Outlook (`docs/panel-sample-mail.png`) |
 
-Offline:
+Offline — **150 assertions** in all:
 
 - `npm test` — bundle guard (**15** checks) + **59** PowerShell assertions: 14 in
   `test/folder-resolution.test.ps1`, 45 in `test/mail-actions.test.ps1` against a fake COM object model.
 - `node test/panel-api.test.mjs` — **29** assertions driving the real host routes with fake `req`/`res`.
+- `node test/ask-route.test.mjs` — **19** assertions with a stub session controller: one session created and
+  reused, the panel context travels with the question, tool calls are named, transport edges stay closed.
+- `node test/drafts-persist.test.mjs` — **11** assertions: a draft is written to disk on save, a second module
+  instance (a restart, in miniature) lists it with its recipients and body, and a discard clears the file.
 - `node test/sample-mail.test.mjs` — **17** assertions: no fixture → the live provider fails loudly (no
   invented empty mailbox) → toggle on → folders, rows, read → toggle off → fails again, plus route guards.
 - `node --check index.js` / `client.js` — the only build gate; there is no bundler and no TypeScript.
@@ -281,7 +285,8 @@ silently.
 5. **Soft delete only.** Moves to Deleted Items, reports `recoverable: true`; no permanent delete.
 6. **English folder names** in `Resolve-Folder` (`Inbox`, `Sent Items`, `Drafts`, `Deleted Items`); anything
    else must be addressed by entryId from `maildesk_list_folders`.
-7. **Drafts are in memory.** A host restart loses unsent drafts.
+7. **Drafts persist to `%TEMP%\dsh-arya-maildesk-drafts.json`** and are read back at mount; a file that cannot be
+   written (or must not be, in a test) falls back to memory only. `MAILDESK_DRAFTS_FILE` overrides the path.
 8. **`move_mail` changes entryIds** — re-read after a move.
 9. **Search covers one folder at a time.** The panel's search box asks the bridge for the *current* folder, subject
    first and sender second; there is no whole-mailbox or free-text search, and `maildesk_search_mail` still does

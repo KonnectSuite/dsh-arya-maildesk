@@ -1003,6 +1003,24 @@ export function apply(ctx) {
     // lives. "Save to Outlook Drafts" is the explicit escape hatch, and it
     // updates that same item on every later save.
     const drafts = new Map()
+    // Drafts are harness data, so they outlive a host restart: the map is
+    // mirrored to one JSON file and read back at mount. Unsent replies used to
+    // vanish on reload, which is the most expensive kind of loss.
+    const DRAFTS_FILE = process.env.MAILDESK_DRAFTS_FILE || join(tmpdir(), 'dsh-arya-maildesk-drafts.json')
+    const saveDrafts = () => {
+      try {
+        writeFileSync(DRAFTS_FILE, JSON.stringify([...drafts.values()]), 'utf8')
+      } catch { /* memory-only is still better than nothing */ }
+    }
+    try {
+      const saved = JSON.parse(readFileSync(DRAFTS_FILE, 'utf8'))
+      if (Array.isArray(saved)) {
+        for (const row of saved) {
+          if (row === null || typeof row !== 'object' || typeof row.id !== 'string') continue
+          drafts.set([row.account || 'default', row.mode || 'new', row.inReplyTo || ''].join('|'), row)
+        }
+      }
+    } catch { /* first run, or an unreadable file: start empty */ }
     const draftKeyOf = (account, mode, thread) => [account || 'default', mode || 'new', thread || ''].join('|')
     const asList = (v) => (Array.isArray(v) ? v : [])
     const publicDraft = (d) => ({
@@ -1099,6 +1117,7 @@ export function apply(ctx) {
         }
       }
       drafts.set(key, draft)
+      saveDrafts()
       return { draft: publicDraft(draft), reused: false }
     }
     function patchDraft(draft, patch) {
@@ -1151,6 +1170,7 @@ export function apply(ctx) {
       }
       if (result && result.status === 'ok') {
         drafts.delete(draftKeyOf(d.account, d.mode, d.inReplyTo))
+        saveDrafts()
         result.draftId = d.id
       }
       return result
@@ -1175,12 +1195,16 @@ export function apply(ctx) {
           const d = findDraft(String(payload.draftId || ''))
           if (d === null) { res.statusCode = 404; res.end(JSON.stringify({ ok: false, error: 'unknown draft: ' + payload.draftId })); return }
           patchDraft(d, payload.patch !== null && typeof payload.patch === 'object' ? payload.patch : {})
+          saveDrafts()
           res.end(JSON.stringify({ ok: true, draft: publicDraft(d) }))
           return
         }
         if (op === 'discard') {
           const d = findDraft(String(payload.draftId || ''))
-          if (d !== null) drafts.delete(draftKeyOf(d.account, d.mode, d.inReplyTo))
+          if (d !== null) {
+            drafts.delete(draftKeyOf(d.account, d.mode, d.inReplyTo))
+            saveDrafts()
+          }
           res.end(JSON.stringify({ ok: true, discarded: d !== null }))
           return
         }

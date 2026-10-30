@@ -967,7 +967,10 @@ export function apply(ctx) {
           // agent the panel's own context along with the words.
           const context = [
             payload.folderPath ? 'folder ' + String(payload.folderPath) : '',
-            payload.selected ? 'selected mail "' + String(payload.selected) + '"' : '',
+            payload.selected
+              ? 'selected mail "' + String(payload.selected) + '"'
+                + (payload.selectedId ? ' (entryId ' + String(payload.selectedId) + ')' : '')
+              : '',
           ].filter(Boolean).join(', ')
           const composed = context === '' ? text : text + '\n\n(mail panel · ' + context + ')'
           const requestId = randomUUID()

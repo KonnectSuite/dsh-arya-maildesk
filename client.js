@@ -256,6 +256,10 @@ window.__ModuleLoader__.load({
         '.md-ask{border-top:1px solid var(--dsw-alias-border-subtle,#e6e6e6);background:#fafbfc;display:flex;flex-direction:column;max-height:46%;flex:none}',
     '.md-ask-head{display:flex;align-items:center;gap:8px;padding:6px 10px;font-size:12px}',
     '.md-ask-sub{opacity:.6;font-size:11px}',
+    '.md-ask-chips{display:flex;gap:6px;padding:0 10px 6px;flex-wrap:wrap}',
+    '.md-ask-chip{font:inherit;font-size:11.5px;padding:3px 9px;border-radius:12px;border:1px solid #d8dde5;background:#fff;cursor:pointer;color:inherit}',
+    '.md-ask-chip:hover:not(:disabled){background:#f2f5fb}',
+    '.md-ask-chip:disabled{opacity:.55;cursor:default}',
     '.md-ask-log{overflow:auto;padding:6px 10px;display:flex;flex-direction:column;gap:6px;min-height:60px}',
     '.md-ask-msg{padding:6px 9px;border-radius:8px;font-size:12.5px;white-space:pre-wrap;max-width:86%;line-height:1.4}',
     '.md-ask-msg.user{align-self:flex-end;background:#3b6ef514;color:#2350c9}',
@@ -1077,8 +1081,8 @@ window.__ModuleLoader__.load({
         } catch { /* the poll retries */ }
       }
 
-      const askSend = async () => {
-        const text = askText.trim()
+      const askSend = async (textArg) => {
+        const text = String(textArg !== undefined ? textArg : askText).trim()
         if (text === '' || askBusy) return
         setAskBusy(true)
         setAskError('')
@@ -1420,6 +1424,18 @@ window.__ModuleLoader__.load({
               h('span', { className: 'md-ask-sub' }, 'same agent, same mail tools'),
               h('span', { className: 'md-spacer' }),
               h('button', { className: 'md-btn', type: 'button', onClick: () => setAskOpen(false) }, 'Close')),
+            // With a mail open, the three things people actually ask are one
+            // click away instead of typing the same sentence again.
+            openMail !== null
+              ? h('div', { className: 'md-ask-chips' },
+                  ['Summarize this mail', 'What does it want from me?', 'Draft a short reply'].map((q) => h('button', {
+                    key: q,
+                    type: 'button',
+                    className: 'md-ask-chip',
+                    disabled: askBusy,
+                    onClick: () => { setAskText(q); void askSend(q) },
+                  }, q)))
+              : null,
             h('div', { className: 'md-ask-log' },
               askLog.length === 0
                 ? h('div', { className: 'md-ask-empty' },

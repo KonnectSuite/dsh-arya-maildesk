@@ -275,8 +275,10 @@ silently.
 
 ## Known gaps
 
-1. **No send has touched a real mailbox.** Reads, mark-read, move, delete and the reply composer pass (rungs 1–8);
-   `send` is still synthetic-only, and the send gate has never seen a real recipient.
+1. **The final send dispatch has never run.** Reads, mark-read, move, delete, the reply composer and the send
+   *gates* pass (rungs 1–8 plus the confirmation half of 9): no hash returns `needs-confirmation` with the exact
+   preview, and a wrong hash is refused with the draft intact. What has never happened is Outlook actually
+   transmitting a message, and no human has yet approved one leaving the machine.
 2. **User-visible strings are English only.** No locale layer, no `locale/*.json`. Deliberate deviation from
    the market's localisation gate, recorded rather than hidden; first item for 1.1.0.
 3. **`TESTCASES.md`'s 49 cases were inherited** and run by upstream's author. Post-fork actions have no case

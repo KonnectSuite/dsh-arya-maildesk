@@ -50,8 +50,9 @@ bundles), which is why the panel talks over routes.
 
 ## Where things stand
 
-Verified on **Dev AryaCode** (`%LOCALAPPDATA%\AryaCode-dev\home`, profile `web`, repo linked), never on an
-installed application:
+Verified in **Dev AryaCode** (`%LOCALAPPDATA%\AryaCode-dev\home`, profile `web`), and — from 1.0.2 on — in the
+**installed** application on this PC (Mail row in the sidebar, 24 tools registered live, `maildesk_account`
+returning the honest new-Outlook sentence). Never against a real mailbox:
 
 | Milestone | Evidence |
 |---|---|
@@ -61,12 +62,15 @@ installed application:
 | Draft card | keyed `tool.call.toolview` row on the host draft, `[Edit in panel] [Send…] [Discard]` (`docs/draft-card.png`) |
 | Draft beside chat | real right-Sidebar tab, conversation still visible (`docs/panel-beside-chat.png`) |
 | No classic Outlook | the panel names the reason instead of reporting zero mail (`docs/panel-new-outlook.png`) |
+| Sample mailbox | `SAMPLE MAIL` pill, **Preview with sample mail** / **Back to live mail**, whole mailbox on a PC with no Outlook (`docs/panel-sample-mail.png`) |
 
 Offline:
 
-- `npm test` — bundle guard (**13** checks) + **59** assertions: 14 in `test/folder-resolution.test.ps1`,
-  45 in `test/mail-actions.test.ps1` against a fake COM object model.
+- `npm test` — bundle guard (**15** checks) + **59** PowerShell assertions: 14 in
+  `test/folder-resolution.test.ps1`, 45 in `test/mail-actions.test.ps1` against a fake COM object model.
 - `node test/panel-api.test.mjs` — **29** assertions driving the real host routes with fake `req`/`res`.
+- `node test/sample-mail.test.mjs` — **17** assertions: no fixture → the live provider fails loudly (no
+  invented empty mailbox) → toggle on → folders, rows, read → toggle off → fails again, plus route guards.
 - `node --check index.js` / `client.js` — the only build gate; there is no bundler and no TypeScript.
 
 **Not verified: nothing here has read a real mailbox.** Everything above runs on synthetic mail from
@@ -88,15 +92,16 @@ You are picking this up cold. Read this section top to bottom before touching an
 ### 2. Install
 
 The market card installs a version into a pnpm profile, and pnpm holds **any version younger than 24 h**
-(`minimumReleaseAge`, default 1440 minutes). 1.0.1 was published `2026-10-30T03:38Z`, so it is held until
-`2026-10-31T03:38Z` (23:38 local, EDT) unless exempted; before then the install is refused and the market
-marks it failed.
+(`minimumReleaseAge`, default 1440 minutes). **1.0.3 is the version to install**; it was published
+`2026-10-30T04:10Z`, so it is held until `2026-10-31T04:10Z` (**00:10 local, EDT, on Oct 31**) unless
+exempted. Before then the install is refused and the market marks it failed — with a red `!`, `added 0`,
+and a `Done in Ns` tail that is **not** success.
 
 Two edits, in this order, in `%USERPROFILE%\.aryacode\profiles\desktop\pnpm-workspace.yaml`:
 
 ```yaml
 minimumReleaseAgeExclude:
-  - '@aryacode/dsh-arya-maildesk@1.0.1'     # REPLACE any @1.0.0 line, do not append
+  - '@aryacode/dsh-arya-maildesk@1.0.3'     # REPLACE any older @1.0.x line, do not append
 ```
 
 pnpm honours only the **first** rule per package name, so a leftover `@1.0.0` line shadows the new one.
@@ -147,6 +152,30 @@ Each rung isolates one layer; stop at the first failure and read the signature t
 For each rung: pass/fail and, on failure, the verbatim error. If rung 1 passes, the backend is real and the
 rest is polish. If it fails, the string above identifies the layer. Record which rung first diverged — that
 is the whole value of the session.
+
+### 6. Working from this laptop (GitHub CLI is available here now)
+
+Earlier sessions were crippled on this machine because `gh` was missing. **It is installed and authenticated
+as `KonnectSuite` on the work laptop now**, so the full loop can run there instead of bouncing back to the
+other PC: fix, commit, push, publish, release, catalogue, verify.
+
+```powershell
+gh auth status                      # expect: logged in as KonnectSuite, scopes delete_repo, gist, read:org, repo
+gh repo view KonnectSuite/dsh-arya-maildesk
+git -c http.sslBackend=openssl push origin main    # schannel fails on this network without -c http.sslBackend=openssl
+```
+
+Rules that still apply there:
+
+- **Always pass `--repo KonnectSuite/dsh-arya-maildesk` to `gh release`.** The clone keeps an `upstream`
+  remote pointing at the original project, and `gh` resolves the repository from the remotes — without
+  `--repo` it tries to push a tag to `UnknowCao/dsh-outlook` and fails.
+- Never republish a version; bump it. `npm deprecate` retires a bad one, `npm unpublish` is refused for
+  tokens that skip 2FA.
+- `git push --tags` also carries the fork's inherited tags; push `v<version>` explicitly and delete strays
+  with `git push origin --delete <tag>`.
+- Publish order is fixed: `npm publish --access public` → `dsh-market` `--pull` → `--release --npm <v>` →
+  `--push` → verify the **live raw URL** with a cache-buster, not the local file.
 
 ## Two bugs the tests could not see (why the guard exists)
 

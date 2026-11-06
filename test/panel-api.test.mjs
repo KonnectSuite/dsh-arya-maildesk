@@ -9,7 +9,7 @@
  *   node test/panel-api.test.mjs
  */
 import assert from 'node:assert/strict'
-import { rmSync } from 'node:fs'
+import { rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -20,6 +20,10 @@ process.env.OLK_WATCH = '0'
 process.env.MAILDESK_DRAFTS_FILE = join(tmpdir(), 'maildesk-panel-drafts-' + process.pid + '.json')
 process.env.MAILDESK_STATE_FILE = join(tmpdir(), 'maildesk-panel-ask-' + process.pid + '.json')
 rmSync(process.env.MAILDESK_DRAFTS_FILE, { force: true })
+
+// A real file on disk, because the draft store refuses a path it cannot stat.
+const attachFile = join(tmpdir(), 'maildesk-panel-attachment-' + process.pid + '.txt')
+writeFileSync(attachFile, 'punchlist for line 4\n', 'utf8')
 
 const plugin = await import('../index.js')
 
@@ -290,14 +294,26 @@ await check('a draft patch is stored, and a list returns it', async () => {
       to: [{ name: 'Melissa Chen', email: 'melissa@example.com' }],
       subject: 'Re: Line 4 retrofit',
       bodyHtml: '<p>Yes, Thursday works.</p>',
+      attachments: [attachFile],
     },
   })
   assert.equal(r.ok, true)
   assert.equal(r.draft.to.length, 1)
   assert.equal(r.draft.to[0].email, 'melissa@example.com')
+  assert.deepEqual(r.draft.attachments, [attachFile], 'the attachment path stays on the draft')
   const back = await hit('/maildesk/api/draft', { op: 'list' })
   assert.equal(back.drafts.length, 1)
   assert.equal(back.drafts[0].bodyHtml, '<p>Yes, Thursday works.</p>')
+  assert.deepEqual(back.drafts[0].attachments, [attachFile], 'and survives a list read')
+})
+
+await check('a path that does not exist is dropped from the draft', async () => {
+  const r = await hit('/maildesk/api/draft', {
+    op: 'save', draftId,
+    patch: { attachments: [attachFile, join(tmpdir(), 'maildesk-does-not-exist-' + Date.now() + '.bin')] },
+  })
+  assert.equal(r.ok, true)
+  assert.deepEqual(r.draft.attachments, [attachFile], 'only the real file remains')
 })
 
 await check('send refuses until it is given the hash of the content shown', async () => {
@@ -306,6 +322,16 @@ await check('send refuses until it is given the hash of the content shown', asyn
   assert.equal(r.result.status, 'needs-confirmation')
   assert.equal(r.result.hash.length, 64)
   assert.ok(r.result.preview.htmlBody.includes('Thursday works'), 'the preview is the exact content that would be sent')
+  assert.deepEqual(r.result.preview.attachments, [attachFile], 'the preview names the attachments too')
+
+  // The confirmed content is bound to the attachments: changing one changes the
+  // hash, so an approval cannot be reused for a different file set.
+  const withOther = await hit('/maildesk/api/draft', { op: 'save', draftId, patch: { attachments: [] } })
+  assert.equal(withOther.ok, true)
+  const noFiles = await hit('/maildesk/api/send', { draftId })
+  assert.notEqual(noFiles.result.hash, r.result.hash, 'the hash covers the attachment list')
+  await hit('/maildesk/api/draft', { op: 'save', draftId, patch: { attachments: [attachFile] } })
+
   const sent = await post('list_mail', { folder: 'Sent Items', limit: 200 })
   assert.ok(!sent.result.mails.some((m) => m.subject === 'Re: Line 4 retrofit'), 'nothing may leave yet')
 })
@@ -383,8 +409,29 @@ await check('maildesk_compose opens a reply draft the card can poll', async () =
   assert.equal(got.draft.subject, out.subject)
 })
 
-await check('a second call on the same thread returns the same draft', async () => {
-  const inbox = await post('list_mail', { folder: 'Inbox', limit: 1 })
+await check('maildesk_compose puts the attachments the person picked on the draft', async () => {
+  const out = await compose.execute({
+    mode: 'new',
+    to: 'kphung@frommconnect.com',
+    subject: 'attachment check',
+    body: 'See the attached file.',
+    attachments: [attachFile],
+  })
+  assert.equal(out.status, 'ok')
+  assert.deepEqual(out.attachments, ['maildesk-panel-attachment-' + process.pid + '.txt'], 'the tool result names the file')
+  const got = await hit('/maildesk/api/draft', { op: 'get', draftId: out.draftId })
+  assert.deepEqual(got.draft.attachments, [attachFile], 'the draft carries the absolute path')
+  // A bare string is accepted too: an agent with one file often writes one.
+  const single = await compose.execute({ draftId: out.draftId, attachments: attachFile })
+  assert.equal(single.status, 'ok')
+  const again = await hit('/maildesk/api/draft', { op: 'get', draftId: out.draftId })
+  assert.deepEqual(again.draft.attachments, [attachFile], 'a single path still lands as a list')
+  // Leave the store as the later checks expect it.
+  const dropped = await hit('/maildesk/api/draft', { op: 'discard', draftId: out.draftId })
+  assert.equal(dropped.discarded, true)
+})
+
+await check('a second call on the same thread returns the same draft', async () => {  const inbox = await post('list_mail', { folder: 'Inbox', limit: 1 })
   const entryId = inbox.result.mails[0].entryId
   const again = await compose.execute({ mode: 'reply', entryId })
   assert.equal(again.draftId, cardDraftId)

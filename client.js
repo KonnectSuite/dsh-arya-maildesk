@@ -321,6 +321,13 @@ window.__ModuleLoader__.load({
     '.md-ask-ctxbar{display:flex;align-items:center;gap:6px;padding:0 14px 8px;flex:none;min-width:0}',
     '.md-ask-ctx{display:inline-flex;align-items:center;gap:6px;font-size:11px;padding:3px 9px;border-radius:999px;background:var(--dsw-alias-bg-subtle,#f2f4f8);color:var(--dsw-alias-label-secondary,#5a6069);max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}',
     '.md-ask-ctx button{border:0;background:none;cursor:pointer;color:inherit;font-size:12px;padding:0 0 0 2px}',
+    '.md-ask-files{display:flex;flex-wrap:wrap;gap:6px;padding:0 12px 8px;flex:none}',
+    '.md-ask-file{display:inline-flex;align-items:center;gap:4px;font-size:11px;padding:3px 8px;border-radius:999px;border:1px solid var(--dsw-alias-border-subtle,#dfe3ea);background:var(--dsw-alias-bg-subtle,#f5f7fa);color:var(--dsw-alias-label-secondary,#5a6069);max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}',
+    '.md-ask-file.busy{opacity:.7}',
+    '.md-ask-file button{border:0;background:none;cursor:pointer;color:inherit;font-size:12px;padding:0 0 0 2px}',
+    '.md-ask-clip{width:34px;height:34px;border-radius:11px;border:1px solid var(--dsw-alias-border-subtle,#d8dde5);background:transparent;color:inherit;cursor:pointer;font-size:14px;flex:none;display:flex;align-items:center;justify-content:center}',
+    '.md-ask-clip:hover:not(:disabled){background:var(--dsw-alias-interactive-bg-hover,#f3f5f9)}',
+    '.md-ask-clip:disabled{opacity:.45;cursor:default}',
     '.md-ask-compose{display:flex;gap:8px;padding:10px 12px 12px;align-items:flex-end;border-top:1px solid var(--dsw-alias-border-subtle,#ececec);flex:none}',
     '.md-ask-input{flex:1 1 auto;max-height:128px;font:inherit;font-size:13px;line-height:1.45;padding:8px 11px;border:1px solid var(--dsw-alias-border-subtle,#d8dde5);border-radius:11px;resize:none;background:transparent;color:inherit;outline:none;overflow:auto}',
     '.md-ask-input:focus{border-color:var(--dsw-alias-label-accent,#3b6ef5)}',
@@ -859,9 +866,14 @@ window.__ModuleLoader__.load({
       const [askQuestion, setAskQuestion] = React.useState(null)
       const [askAnswers, setAskAnswers] = React.useState({})
       const [askAnswerBusy, setAskAnswerBusy] = React.useState(false)
+      // Files picked in the card. The bytes are copied host-side so the agent
+      // gets real absolute paths to hand to maildesk_compose.
+      const [askFiles, setAskFiles] = React.useState([])
+      const [askAttachBusy, setAskAttachBusy] = React.useState(false)
       const panelRef = React.useRef(null)
       const askBodyRef = React.useRef(null)
       const askInputRef = React.useRef(null)
+      const askFileRef = React.useRef(null)
       const askDrag = React.useRef(null)
       const askAtBottom = React.useRef(true)
       // Which stores this panel shows. Hidden ones stay in Outlook.
@@ -1473,7 +1485,8 @@ window.__ModuleLoader__.load({
         setAskBusy(true)
         setAskError('')
         // Show the question at once; the answer still comes from the host poll.
-        setAskLog((prev) => prev.concat([{ key: 'local-' + Date.now(), role: 'user', text, at: Date.now(), local: true }]))
+        const fileNote = askFiles.length > 0 ? '\n\n📎 ' + askFiles.map((f) => f.name).join(', ') : ''
+        setAskLog((prev) => prev.concat([{ key: 'local-' + Date.now(), role: 'user', text: text + fileNote, at: Date.now(), local: true }]))
         setAskText('')
         try {
           await askPost({
@@ -1481,7 +1494,9 @@ window.__ModuleLoader__.load({
             folderPath: page.folderPath || '',
             selected: openMail !== null && openMail.subject ? openMail.subject : '',
             selectedId: openMail !== null && openMail.entryId ? openMail.entryId : '',
+            attachments: askFiles.map((f) => f.path),
           })
+          setAskFiles([])
           await readAskLog()
         } catch (error) {
           setAskError(error && error.message ? error.message : String(error))
@@ -1489,6 +1504,48 @@ window.__ModuleLoader__.load({
           setAskBusy(false)
         }
       }
+
+      // ---- attachments -------------------------------------------------
+      const readBase64 = (file) => new Promise((resolve, reject) => {
+        const reader = new FileReader()
+        reader.onload = () => {
+          const text = String(reader.result || '')
+          const comma = text.indexOf(',')
+          resolve(comma >= 0 ? text.slice(comma + 1) : '')
+        }
+        reader.onerror = () => reject(reader.error || new Error('could not read ' + file.name))
+        reader.readAsDataURL(file)
+      })
+
+      const attachFiles = async (list) => {
+        const files = Array.from(list || [])
+        if (files.length === 0) return
+        setAskAttachBusy(true)
+        setAskError('')
+        try {
+          for (const file of files) {
+            if (file.size > 25 * 1024 * 1024) {
+              setAskError(file.name + ' is larger than 25 MB')
+              continue
+            }
+            const data = await readBase64(file)
+            const res = await fetch('/maildesk/api/attachments', {
+              method: 'POST',
+              headers: { 'content-type': 'application/json' },
+              body: JSON.stringify({ name: file.name, data }),
+            })
+            const payload = await res.json().catch(() => null)
+            if (payload === null || payload.ok !== true) throw new Error((payload && payload.error) || ('HTTP ' + res.status))
+            setAskFiles((prev) => (prev.length >= 10 ? prev : prev.concat([{ path: payload.path, name: payload.name, size: payload.size }])))
+          }
+        } catch (error) {
+          setAskError(error && error.message ? error.message : String(error))
+        } finally {
+          setAskAttachBusy(false)
+        }
+      }
+
+      const dropAskFile = (path) => setAskFiles((prev) => prev.filter((f) => f.path !== path))
 
       const stopAsk = async () => {
         setAskError('')
@@ -1925,6 +1982,12 @@ window.__ModuleLoader__.load({
                   c.showBcc ? null : h('button', { className: 'md-link', type: 'button', onClick: () => setCompose({ ...c, showBcc: true }) }, 'Add Bcc')),
             c.showBcc ? field('Bcc', c.bccText, (v) => setCompose({ ...c, bccText: v })) : null,
             field('Subject', c.subject, (v) => setCompose({ ...c, subject: v }), ''),
+            Array.isArray(c.draft.attachments) && c.draft.attachments.length > 0
+              ? h('div', { className: 'md-field' },
+                  h('label', null, 'Attachments'),
+                  h('div', { className: 'md-att' },
+                    c.draft.attachments.map((path) => String(path).split(/[\\/]/).pop()).join(' · ')))
+              : null,
             h('div', { className: 'md-field' },
               h('label', null, 'Body'),
               h('textarea', {
@@ -2239,7 +2302,31 @@ window.__ModuleLoader__.load({
                   }, askAnswerBusy ? 'Sending…' : 'Send answer'))
               : null,
             askThreadBody,
+            askFiles.length > 0 || askAttachBusy
+              ? h('div', { className: 'md-ask-files' },
+                  askFiles.map((file) => h('span', { key: file.path, className: 'md-ask-file', title: file.path },
+                    '📎 ' + file.name,
+                    h('button', { type: 'button', title: 'Remove this file', onClick: () => dropAskFile(file.path) }, '×'))),
+                  askAttachBusy ? h('span', { className: 'md-ask-file busy' }, 'reading…') : null)
+              : null,
             h('div', { className: 'md-ask-compose' },
+              h('input', {
+                type: 'file',
+                multiple: true,
+                ref: askFileRef,
+                style: { display: 'none' },
+                onChange: (ev) => {
+                  void attachFiles(ev.target.files)
+                  ev.target.value = ''
+                },
+              }),
+              h('button', {
+                className: 'md-ask-clip',
+                type: 'button',
+                title: 'Attach a file to what you ask for',
+                disabled: askAttachBusy || askFiles.length >= 10,
+                onClick: () => { if (askFileRef.current !== null) askFileRef.current.click() },
+              }, askAttachBusy ? '…' : '📎'),
               h('textarea', {
                 className: 'md-ask-input',
                 ref: askInputRef,

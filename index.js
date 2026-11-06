@@ -25,7 +25,7 @@
 
 import { spawn } from 'node:child_process'
 import { createHash, randomBytes, randomUUID } from 'node:crypto'
-import { statSync, appendFileSync, writeFileSync, readFileSync } from 'node:fs'
+import { statSync, appendFileSync, writeFileSync, readFileSync, mkdirSync, existsSync, readdirSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { fileURLToPath } from 'node:url'
 import { join, dirname } from 'node:path'
@@ -284,6 +284,49 @@ function contentHash(value) {
  * into a second send.
  */
 const confirmations = new Map()
+
+/**
+ * Files the person attached from the panel, copied into one temp folder so the
+ * bridge can hand Outlook real absolute paths. The web view has no way to read
+ * a path off a file input, so the bytes travel here and land on disk; nothing
+ * is written into the mailbox until the agent attaches them to a draft.
+ */
+const ATTACH_DIR = process.env.MAILDESK_ATTACH_DIR || join(tmpdir(), 'dsh-arya-maildesk-attachments')
+const ATTACH_MAX_BYTES = 25 * 1024 * 1024
+const ATTACH_MAX_FILES = 10
+
+const safeFileName = (name) => {
+  const base = String(name || 'file').split(/[\\/]/).pop().replace(/[\u0000-\u001f<>:"|?*]/g, '_').trim()
+  const trimmed = base === '' || base === '.' || base === '..' ? 'file' : base
+  return trimmed.length > 120 ? trimmed.slice(-120) : trimmed
+}
+
+/** Store one uploaded file and return the absolute path the bridge will use. */
+function storeAttachment(name, dataBase64) {
+  const clean = safeFileName(name)
+  const buffer = Buffer.from(String(dataBase64 || ''), 'base64')
+  if (buffer.length === 0) return { error: 'the file is empty' }
+  if (buffer.length > ATTACH_MAX_BYTES) return { error: 'the file is larger than 25 MB' }
+  mkdirSync(ATTACH_DIR, { recursive: true })
+  const path = join(ATTACH_DIR, Date.now().toString(36) + '-' + clean)
+  writeFileSync(path, buffer)
+  return { path, name: clean, size: buffer.length }
+}
+
+/** Keep only paths that exist and are files; a draft must never carry a ghost. */
+function cleanAttachments(list) {
+  const out = []
+  const missing = []
+  for (const raw of Array.isArray(list) ? list : []) {
+    const path = String(raw || '').trim()
+    if (path === '') continue
+    try {
+      if (!statSync(path).isFile()) { missing.push(path); continue }
+    } catch { missing.push(path); continue }
+    if (!out.includes(path)) out.push(path)
+  }
+  return { paths: out.slice(0, ATTACH_MAX_FILES), missing }
+}
 
 /** Run the confirmed dispatch and consume the approval on success, so a
  *  replayed confirmed:true call must pass through a fresh popup. */
@@ -1226,11 +1269,19 @@ export function apply(ctx) {
           }
           // "this one" is ambiguous to a tool that wants an entryId: hand the
           // agent the panel's own context along with the words.
+          // Files the person attached in the card: the panel copied them to
+          // disk, so the agent gets usable absolute paths instead of filenames.
+          const attached = cleanAttachments(payload.attachments)
           const context = [
             payload.folderPath ? 'folder ' + String(payload.folderPath) : '',
             payload.selected
               ? 'selected mail "' + String(payload.selected) + '"'
                 + (payload.selectedId ? ' (entryId ' + String(payload.selectedId) + ')' : '')
+              : '',
+            attached.paths.length > 0
+              ? 'the person attached ' + attached.paths.length + ' file(s); pass these exact paths in the '
+                + 'attachments argument of maildesk_compose (to put them on a draft) or maildesk_send_mail: '
+                + attached.paths.join('; ')
               : '',
           ].filter(Boolean).join(', ')
           // The panel has no popup for ask_user_question: that surface belongs
@@ -1343,6 +1394,46 @@ export function apply(ctx) {
       },
     }), 'dsh-arya-maildesk: models route')
 
+    // ---- attachments ---------------------------------------------------
+    // The panel's file input can read bytes but not a path, so the browser posts
+    // the file here and gets back an absolute path the bridge can attach.
+    ctx.effect(() => webCtx.webServer.register({
+      kind: 'exact',
+      path: '/maildesk/api/attachments',
+      handler: async (req, res) => {
+        res.setHeader('Content-Type', 'application/json; charset=utf-8')
+        if (req.method !== 'POST') {
+          res.statusCode = 405
+          res.end(JSON.stringify({ ok: false, error: 'POST only' }))
+          return
+        }
+        if (!sameOrigin(req)) {
+          res.statusCode = 403
+          res.end(JSON.stringify({ ok: false, error: 'cross-origin request refused' }))
+          return
+        }
+        try {
+          const body = await readJsonBody(req, 40 * 1024 * 1024)
+          if (body.error !== undefined) {
+            res.statusCode = 400
+            res.end(JSON.stringify({ ok: false, error: body.error }))
+            return
+          }
+          const payload = body.value !== null && typeof body.value === 'object' ? body.value : {}
+          const stored = storeAttachment(payload.name, payload.data)
+          if (stored.error !== undefined) {
+            res.statusCode = 400
+            res.end(JSON.stringify({ ok: false, error: stored.error }))
+            return
+          }
+          res.end(JSON.stringify({ ok: true, path: stored.path, name: stored.name, size: stored.size }))
+        } catch (error) {
+          res.statusCode = 500
+          res.end(JSON.stringify({ ok: false, error: (error && error.message) || String(error) }))
+        }
+      },
+    }), 'dsh-arya-maildesk: attachments route')
+
     // ---- accounts ------------------------------------------------------
     // Hide one of the profile's stores from this workspace. Outlook keeps every
     // account; this is a view filter for the panel and the agent, persisted so
@@ -1446,6 +1537,7 @@ export function apply(ctx) {
       id: d.id, mode: d.mode, inReplyTo: d.inReplyTo, inReplyToSubject: d.inReplyToSubject,
       to: d.to, cc: d.cc, bcc: d.bcc, subject: d.subject, bodyHtml: d.bodyHtml,
       quoteHtml: d.quoteHtml, outlookEntryId: d.outlookEntryId,
+      attachments: asList(d.attachments),
       createdAt: d.createdAt, updatedAt: d.updatedAt,
     })
     const findDraft = (id) => {
@@ -1480,7 +1572,7 @@ export function apply(ctx) {
       const draft = {
         id: 'draft-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 8),
         account, mode, inReplyTo: thread, inReplyToSubject: '', to: [], cc: [], bcc: [],
-        subject: '', bodyHtml: '', quoteHtml: '', outlookEntryId: null,
+        subject: '', bodyHtml: '', quoteHtml: '', outlookEntryId: null, attachments: [],
         createdAt: Date.now(), updatedAt: Date.now(),
       }
       if (thread !== '') {
@@ -1549,6 +1641,11 @@ export function apply(ctx) {
       }
       if (patch.subject !== undefined) draft.subject = String(patch.subject)
       if (patch.bodyHtml !== undefined) draft.bodyHtml = String(patch.bodyHtml)
+      if (patch.attachments !== undefined) {
+        // Only files that exist now: a draft that names a ghost would fail at
+        // send time, long after the person approved it.
+        draft.attachments = cleanAttachments(patch.attachments).paths
+      }
       draft.updatedAt = Date.now()
       return draft
     }
@@ -1560,6 +1657,7 @@ export function apply(ctx) {
       bcc: formatAddrList(d.bcc),
       subject: d.subject,
       htmlBody: String(d.bodyHtml || '') + String(d.quoteHtml || ''),
+      attachments: asList(d.attachments),
     })
     async function sendDraft(id, confirmHash) {
       const d = findDraft(String(id || ''))
@@ -1575,8 +1673,8 @@ export function apply(ctx) {
         return {
           status: 'needs-confirmation',
           hash,
-          preview: { mode: args.mode, to: args.to, cc: args.cc, bcc: args.bcc, subject: args.subject, htmlBody: args.htmlBody },
-          instruction: 'Show the recipient, subject and body to the user and retry with the same hash only after they allow this exact content.',
+          preview: { mode: args.mode, to: args.to, cc: args.cc, bcc: args.bcc, subject: args.subject, htmlBody: args.htmlBody, attachments: args.attachments },
+          instruction: 'Show the recipient, subject, body and attachment names to the user and retry with the same hash only after they allow this exact content.',
         }
       }
       let result
@@ -2278,6 +2376,11 @@ export function apply(ctx) {
         bcc: { type: 'string', description: 'Bcc as a ; separated list.' },
         subject: { type: 'string', description: 'Subject line. Omit to keep the derived "Re: …".' },
         body: { type: 'string', description: 'Plain-text body. Blank lines become paragraphs.' },
+        attachments: {
+          type: 'array',
+          items: { type: 'string' },
+          description: 'Absolute paths of files to attach. The panel puts files the person attached in the card here; a path that does not exist is dropped rather than queued.',
+        },
       },
     },
     output: {
@@ -2313,6 +2416,11 @@ export function apply(ctx) {
           .join('')
         patch.bodyHtml = html
       }
+      if (a.attachments !== undefined) {
+        // A single path is accepted as well as an array: the agent sometimes
+        // has one file to hand and writes it as a bare string.
+        patch.attachments = Array.isArray(a.attachments) ? a.attachments : [a.attachments]
+      }
       if (Object.keys(patch).length > 0) api.patchDraft(draft, patch)
       const shown = api.publicDraft(draft)
       return {
@@ -2324,6 +2432,7 @@ export function apply(ctx) {
         cc: api.formatAddrList(shown.cc),
         subject: shown.subject,
         bodyHtml: shown.bodyHtml,
+        attachments: shown.attachments.map((path) => String(path).split(/[\\/]/).pop()),
         hasQuote: shown.quoteHtml !== '',
         instruction: 'The draft is now on screen. The user can edit it in the mail panel, or send it — sending asks for an explicit confirmation first.',
       }

@@ -128,6 +128,12 @@ The **Ask** pill at the bottom-right of the panel raises a card instead of takin
 
 Polling is 700 ms while a turn runs and 5 s when idle. **One limitation**: the harness's `ask_user_question` popup belongs to the chat client, so the panel asks its questions **in plain text** instead — the turn is instructed never to call that tool. A question asked there arrives as a normal message you answer with your next message.
 
+### Attaching files
+
+The paperclip beside the composer attaches files to what you are asking for. Pick one or more; each becomes a chip you can remove again. The browser can read a file's bytes but not its path, so the panel posts the bytes to the host, which writes them to `%TEMP%\dsh-arya-maildesk-attachments` and hands the agent a real absolute path — the same path `maildesk_compose` and `maildesk_send_mail` need for Outlook's `Attachments.Add`.
+
+The draft card then lists the files, the send confirmation names them, and the content hash covers them: dropping or adding a file after you looked invalidates the approval, exactly as a body edit does. A path that no longer exists is dropped from the draft rather than failing the send later.
+
 ### Choosing the model
 
 The chip in the card header names the model answering (`V4.1-Flash · High` on this deployment) and opens the host's catalog: **DeepSeek-V4.1-Flash** or **DeepSeek-V4-Pro**, each with Off / Low / High / Max. The choice goes through `sessionController.selectModel`, the same path the chat uses — which also means it becomes the deployment default, exactly as it does when you change the model in chat.
@@ -203,23 +209,26 @@ Diagnostic log: `%TEMP%\dsh-arya-maildesk-watch-debug.log` (rotated at 1 MB).
 
 ## Verification and tests
 
-**178 assertions, seven suites, all run offline** (`npm test`):
+**204 assertions, eight suites, all run offline** (`npm test`):
 
 | Suite | Assertions | What it pins down |
 |---|---|---|
 | `test/bundle.test.mjs` | 15 | the browser bundle is one hand-written module: no build step, no imports, one `__ModuleLoader__` entry, and the host/panel route names match the client's |
-| `test/panel-api.test.mjs` | 29 | the panel routes through fake `req`/`res`: the action allowlist, paging and every row field, the hostile-HTML fixture, mark read, move, delete, the confirmation hash (missing → `needs-confirmation`, wrong → refused, matching → sent once), draft reuse, and 403/405/400 on the transport edges |
-| `test/ask-route.test.mjs` | 29 | the in-panel assistant: one session reused across questions, the panel context in the prompt, the ground rules that forbid `ask_user_question`, the turn markers behind `running`, message timestamps, `cancel`, `new`, and transcript filtering of harness injections |
+| `test/panel-api.test.mjs` | 31 | the panel routes through fake `req`/`res`: the action allowlist, paging and every row field, the hostile-HTML fixture, mark read, move, delete, the confirmation hash (missing → `needs-confirmation`, wrong → refused, matching → sent once), attachments on a draft and in the hash, draft reuse, and 403/405/400 on the transport edges |
+| `test/ask-route.test.mjs` | 33 | the in-panel assistant: one session reused across questions, the panel context and attached paths in the prompt, the ground rules that forbid `ask_user_question`, the turn markers behind `running`, message timestamps, `cancel`, `new`, and transcript filtering of harness injections |
 | `test/accounts.test.mjs` | 8 | hiding an account: the store list, the refusal to hide the last one, persistence, and that the mailbox itself is untouched |
 | `test/models.test.mjs` | 10 | the model route: catalog passthrough, selection, lazy session creation, and 400/405 on bad input |
+| `test/attachments.test.mjs` | 14 | the upload route: bytes land on disk at an absolute path, a traversal name is flattened instead of escaping, reserved characters are replaced, empty payloads are refused, and the origin/method guards hold |
 | `test/drafts-persist.test.mjs` | 11 | drafts survive a host restart, reuse on the same thread, and the discard path |
 | `test/sample-mail.test.mjs` | 17 | the fixture mailbox: labelled data, the pill, and that a COM failure is an error rather than invented mail |
-| `test/run-all.ps1` | 59 | the **real** PowerShell case bodies against a fake COM model: folder resolution, paging with a skipped non-mail item, sorting, preview truncation, unread-only, move returning new entryIds and isolating per-item failures, the `expected` count gate refusing **and deleting nothing**, mark read both ways, and the folder-tree BFS |
+| `test/run-all.ps1` | 65 | the **real** PowerShell case bodies against a fake COM model: folder resolution, paging with a skipped non-mail item, sorting, preview truncation, unread-only, move returning new entryIds and isolating per-item failures, the `expected` count gate refusing **and deleting nothing**, mark read both ways, the folder-tree BFS, and the bridge-source invariants (`bridge-scope.test.ps1`) |
 
 **What has been verified on a real mailbox** (an Exchange profile with three stores, ~545 folders):
 
 - account / folders / list / read / mark read / move / delete / open, counts restored after every test;
 - compose, reply-all with Exchange senders (`EX:/O=…` resolved to SMTP), and **one real send by the owner** through the panel's confirmation;
+- the assistant composing, editing, cc'ing and sending through the tool path after the `CreateItem` fix;
+- **attachments end to end**: a file uploaded through the panel route, the agent drafting with it, and Outlook holding the file on the draft (then the test drafts deleted);
 - conversations (a four-message thread across three people), Focused/Other (82 / 18 on the first page), account hiding, the new-arrival count, and the floating assistant answering a live question;
 - the model picker switching Flash ↔ V4-Pro and back.
 

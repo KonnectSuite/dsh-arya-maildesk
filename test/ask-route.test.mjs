@@ -10,7 +10,7 @@
  *   node test/ask-route.test.mjs
  */
 import assert from 'node:assert/strict'
-import { rmSync } from 'node:fs'
+import { rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -20,6 +20,11 @@ process.env.OLK_WATCH = '0'
 // point the state file at a throwaway path and start clean.
 process.env.MAILDESK_STATE_FILE = join(tmpdir(), 'maildesk-ask-test-' + process.pid + '.json')
 rmSync(process.env.MAILDESK_STATE_FILE, { force: true })
+
+// The panel hands the agent paths, not bytes, so a file has to exist for the
+// attachment line to reach the prompt.
+const attachFile = join(tmpdir(), 'maildesk-ask-attachment-' + process.pid + '.txt')
+writeFileSync(attachFile, 'rev3 quote\n', 'utf8')
 
 const plugin = await import('../index.js')
 
@@ -136,6 +141,17 @@ function check(label, ok, detail) {
   const again = await hit('POST', { text: 'and now?' })
   check('a second question reuses the same session', again.json.sessionId === 'sess-1' && seen.created === 1, String(seen.created))
   check('a question without context sends the words alone', seen.prompts[1].request.content[0].text.endsWith('\n\nand now?') && !seen.prompts[1].request.content[0].text.includes('(mail panel'), String(seen.prompts[1].request.content[0].text).slice(-40))
+
+  // 2b. Files attached in the card reach the agent as absolute paths, so it can
+  //     pass them straight to maildesk_compose instead of asking where they are.
+  const withFiles = await hit('POST', { text: 'send this to Bill', attachments: [attachFile] })
+  check('a question with an attachment is accepted', withFiles.json.ok === true, JSON.stringify(withFiles.json))
+  const attachedPrompt = String(seen.prompts[2].request.content[0].text)
+  check('the prompt names the attached path', attachedPrompt.includes(attachFile), attachedPrompt.slice(-160))
+  check('the prompt says to pass it to maildesk_compose', attachedPrompt.includes('maildesk_compose') && attachedPrompt.includes('attachments'), attachedPrompt.slice(-200))
+
+  const ghost = await hit('POST', { text: 'ignore me', attachments: [attachFile, join(tmpdir(), 'missing-' + Date.now() + '.pdf')] })
+  check('a path that does not exist never reaches the agent', ghost.json.ok === true && !String(seen.prompts[3].request.content[0].text).includes('missing-'), 'a ghost path was forwarded')
 }
 
 // 3. The reply is read back as readable text only: the tool call is named,

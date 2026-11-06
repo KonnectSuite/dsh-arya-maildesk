@@ -2,6 +2,20 @@
 
 This project's version narrative puts **why** before **what**. Every entry starts with the motivation.
 
+## 1.2.0 — Files go with the mail
+
+**Why**: the assistant could draft and send, but the moment a reply needed an attachment the person had to
+leave the panel, find the file, and hope the agent could be told where it was. Worse, a browser file input
+hands out bytes, never a path — and Outlook's `Attachments.Add` needs a path. The gap was plumbing, not
+capability.
+
+**What changed**:
+- **Attachments, from the assistant's composer to Outlook.** A paperclip beside the card's input takes files, shows them as removable chips, and sends their paths with the question. The browser cannot read a path off a file input, so `POST /maildesk/api/attachments` receives the bytes, writes them to `%TEMP%\dsh-arya-maildesk-attachments` (25 MB per file, ten per question, `../../evil.txt` flattened to `evil.txt`) and returns an absolute path; the agent is told to pass those paths to `maildesk_compose`, whose `attachments` argument now exists (and accepts a bare string as well as an array). The draft card lists the files and the send preview names them, and because `sendArgs` carries them the content hash covers them: changing the file set after approval forces a second confirmation. Verified end to end on the live mailbox — upload, draft with the file, Outlook holding it on the draft — then the test drafts were deleted.
+
+- The upload route is the only body the plugin accepts larger than 256 KB (40 MB, because base64 inflates by a
+  third); it flattens a hostile name, replaces Windows-reserved characters, and refuses an empty payload.
+  A path that no longer exists is dropped from the draft instead of failing the send later.
+
 ## 1.1.0 — The panel gets fast, and grows an assistant
 
 **Release scope**: everything since 1.0.3 — the panel speed work described first, then conversation threads,

@@ -1,6 +1,6 @@
 {
   "name": "@aryacode/dsh-arya-maildesk",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "publishConfig": {
     "access": "public"
   },
@@ -47,8 +47,8 @@
     "docs"
   ],
   "scripts": {
-    "test": "node test/bundle.test.mjs && node test/panel-api.test.mjs && node test/ask-route.test.mjs && node test/accounts.test.mjs && node test/models.test.mjs && node test/drafts-persist.test.mjs && node test/sample-mail.test.mjs && powershell -NoProfile -ExecutionPolicy Bypass -File test/run-all.ps1",
-    "test:api": "node test/panel-api.test.mjs && node test/ask-route.test.mjs && node test/accounts.test.mjs && node test/models.test.mjs && node test/drafts-persist.test.mjs && node test/sample-mail.test.mjs",
+    "test": "node test/bundle.test.mjs && node test/panel-api.test.mjs && node test/ask-route.test.mjs && node test/accounts.test.mjs && node test/models.test.mjs && node test/attachments.test.mjs && node test/drafts-persist.test.mjs && node test/sample-mail.test.mjs && powershell -NoProfile -ExecutionPolicy Bypass -File test/run-all.ps1",
+    "test:api": "node test/panel-api.test.mjs && node test/ask-route.test.mjs && node test/accounts.test.mjs && node test/models.test.mjs && node test/attachments.test.mjs && node test/drafts-persist.test.mjs && node test/sample-mail.test.mjs",
     "test:bundle": "node test/bundle.test.mjs"
   },
   "dsh": {
